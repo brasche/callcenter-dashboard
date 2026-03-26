@@ -255,6 +255,11 @@ async def get_agents(start: Optional[str] = Query(None), end: Optional[str] = Qu
                 start_dt, end_dt,
             )
         }
+        # Merge stats cache RNA as fallback for agents not yet in DB
+        for ag in get_agent_stats_cache():
+            name = ag.get("agent") or ""
+            if name and name not in rna_counts:
+                rna_counts[name] = int(ag.get("ring_no_answer") or 0)
 
         # ── Avg time between IB calls ─────────────────────────────────────
         between_rows = {
@@ -632,6 +637,26 @@ async def get_rna(start: Optional[str] = Query(None), end: Optional[str] = Query
             start_dt, end_dt,
         )]
         total = sum(r["rna_count"] for r in agent_rows)
+
+    # Fallback: use ring_no_answer count from the live /agents/stats cache
+    if not total:
+        cache_rows = []
+        for ag in get_agent_stats_cache():
+            name = ag.get("agent") or ""
+            rna  = int(ag.get("ring_no_answer") or 0)
+            if name and rna > 0:
+                cache_rows.append({
+                    "agent":       name,
+                    "rna_count":   rna,
+                    "avg_ringtime": None,
+                    "queues_hit":  0,
+                    "source":      "cache",
+                })
+        if cache_rows:
+            cache_rows.sort(key=lambda r: r["rna_count"], reverse=True)
+            agent_rows = cache_rows
+            total = sum(r["rna_count"] for r in cache_rows)
+
     return {
         "agents": agent_rows,
         "total":  total,

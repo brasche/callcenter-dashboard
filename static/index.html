@@ -178,7 +178,7 @@ tr.team-row td { font-weight: 700; border-top: 2px solid var(--border); backgrou
       <span class="dim" style="font-size:11px" id="rnaTotalLabel"></span>
     </div>
     <div style="padding:16px;display:flex;align-items:center;gap:24px;flex-wrap:wrap">
-      <canvas id="rnaCanvas" width="140" height="140" style="flex-shrink:0"></canvas>
+      <div id="rnaChartWrap"></div>
       <div id="rnaLegend" style="display:flex;flex-direction:column;gap:6px;font-size:12px;min-width:160px"></div>
     </div>
   </div>
@@ -386,8 +386,30 @@ function renderTable() {
 }
 
 
+// ── SVG pie/donut chart helper ─────────────────────────────────────────────
+const PIE_COLORS = ['#f97316','#eab308','#ef4444','#a855f7','#4f6ef7','#22c55e','#06b6d4','#ec4899'];
+
+function buildSvgPie(slices, size, centerLabel) {
+  // slices: [{label, value, color}]
+  const total = slices.reduce((s, x) => s + (x.value || 0), 0);
+  if (!total) return '';
+  const cx = size / 2, cy = size / 2, r = size / 2 - 3, hole = r * 0.52;
+  let paths = '', angle = -Math.PI / 2;
+  slices.forEach(s => {
+    const sweep = (s.value / total) * Math.PI * 2;
+    const x1 = cx + r * Math.cos(angle), y1 = cy + r * Math.sin(angle);
+    const x2 = cx + r * Math.cos(angle + sweep), y2 = cy + r * Math.sin(angle + sweep);
+    paths += `<path d="M${cx},${cy} L${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 ${sweep > Math.PI ? 1 : 0},1 ${x2.toFixed(2)},${y2.toFixed(2)} Z" fill="${s.color}"/>`;
+    angle += sweep;
+  });
+  paths += `<circle cx="${cx}" cy="${cy}" r="${hole}" fill="#1a1d27"/>`;
+  const lbl = centerLabel ?? total;
+  paths += `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" fill="#e2e8f0" font-size="${Math.round(size * 0.14)}" font-weight="bold" font-family="Segoe UI,system-ui,sans-serif">${lbl}</text>`;
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="flex-shrink:0">${paths}</svg>`;
+}
+
 // ── RNA pie chart ─────────────────────────────────────────────────────────
-const RNA_COLORS = ['#f97316','#eab308','#ef4444','#a855f7','#4f6ef7','#22c55e','#06b6d4','#ec4899'];
+const RNA_COLORS = PIE_COLORS;
 
 function renderRnaChart() {
   const card = document.getElementById('rnaCard');
@@ -397,45 +419,20 @@ function renderRnaChart() {
   card.style.display = '';
   document.getElementById('rnaTotalLabel').textContent = total + ' total missed';
 
-  const canvas = document.getElementById('rnaCanvas');
-  const ctx = canvas.getContext('2d');
-  const cx = 70, cy = 70, r = 58, hole = 34;
-  ctx.clearRect(0, 0, 140, 140);
+  const slices = agts.slice(0, 8).map((a, i) => ({
+    label: agents.find(ag => ag.agent_name === a.agent)?.full_name || a.agent,
+    value: a.rna_count,
+    color: RNA_COLORS[i % RNA_COLORS.length],
+  }));
 
-  let angle = -Math.PI / 2;
-  agts.forEach((a, i) => {
-    const slice = (a.rna_count / total) * Math.PI * 2;
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.arc(cx, cy, r, angle, angle + slice);
-    ctx.closePath();
-    ctx.fillStyle = RNA_COLORS[i % RNA_COLORS.length];
-    ctx.fill();
-    angle += slice;
-  });
+  document.getElementById('rnaChartWrap').innerHTML = buildSvgPie(slices, 140, total);
 
-  // Donut hole
-  ctx.beginPath();
-  ctx.arc(cx, cy, hole, 0, Math.PI * 2);
-  ctx.fillStyle = '#1a1d27';
-  ctx.fill();
-
-  // Center label
-  ctx.fillStyle = '#e2e8f0';
-  ctx.font = 'bold 18px Segoe UI, system-ui, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(total, cx, cy);
-
-  // Legend
-  const legendEl = document.getElementById('rnaLegend');
-  legendEl.innerHTML = agts.slice(0, 8).map((a, i) => {
-    const pct = Math.round(a.rna_count / total * 100);
-    const name = agents.find(ag => ag.agent_name === a.agent)?.full_name || a.agent;
+  document.getElementById('rnaLegend').innerHTML = slices.map((s, i) => {
+    const pct = Math.round(s.value / total * 100);
     return `<div style="display:flex;align-items:center;gap:8px">
-      <span style="width:10px;height:10px;border-radius:2px;background:${RNA_COLORS[i % RNA_COLORS.length]};flex-shrink:0;display:inline-block"></span>
-      <span style="color:var(--text)">${esc(name)}</span>
-      <span style="color:var(--muted);margin-left:auto;padding-left:8px">${a.rna_count} <span style="font-size:10px">(${pct}%)</span></span>
+      <span style="width:10px;height:10px;border-radius:2px;background:${s.color};flex-shrink:0;display:inline-block"></span>
+      <span style="color:var(--text)">${esc(s.label)}</span>
+      <span style="color:var(--muted);margin-left:auto;padding-left:8px">${s.value} <span style="font-size:10px">(${pct}%)</span></span>
     </div>`;
   }).join('');
 }
@@ -518,11 +515,15 @@ async function openModal(agentName) {
 }
 
 function buildModal(d, ag) {
-  const atSec = d.active_time_sec || ag?.active_time_sec || 0;
-  const logSec = d.log_time_sec || ag?.log_time_sec || 0;
-  const pauseSec = d.pause_time_sec || ag?.pause_time_sec || 0;
+  const dsPreview = d.daily_stats || {};
+  const dsLogSec   = dsPreview.log_time   || 0;
+  const dsPauseSec = dsPreview.pause_time || 0;
+  const dsActiveSec = dsLogSec > 0 ? Math.max(dsLogSec - dsPauseSec, 0) : 0;
+  const atSec   = d.active_time_sec || ag?.active_time_sec || dsActiveSec || 0;
+  const logSec  = d.log_time_sec    || ag?.log_time_sec    || dsLogSec    || 0;
+  const pauseSec = d.pause_time_sec || ag?.pause_time_sec  || dsPauseSec  || 0;
   const activeHrsStr = atSec > 0
-    ? (atSec/3600).toFixed(2) + 'h <span class="dim" style="font-size:11px">(pause-adj.)</span>'
+    ? (atSec/3600).toFixed(2) + 'h <span class="dim" style="font-size:11px">(log − pause)</span>'
     : logSec > 0 ? (logSec/3600).toFixed(2) + 'h' : '—';
 
   // Agent mapping debug info
@@ -550,13 +551,33 @@ function buildModal(d, ag) {
       const avgRing = rnaEvts.length
         ? Math.round(rnaEvts.reduce((s, e) => s + (e.ringtime || 0), 0) / rnaEvts.length)
         : null;
+
+      // Build per-queue breakdown for pie chart
+      const queueTotals = {};
+      rnaEvts.forEach(e => { queueTotals[e.queue||'Unknown'] = (queueTotals[e.queue||'Unknown'] || 0) + 1; });
+      const queueSlices = Object.entries(queueTotals)
+        .sort((a, b) => b[1] - a[1])
+        .map(([q, v], i) => ({ label: q, value: v, color: PIE_COLORS[i % PIE_COLORS.length] }));
+      const rnaPieHtml = queueSlices.length > 1
+        ? `<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:12px">
+            ${buildSvgPie(queueSlices, 100, rnaCount)}
+            <div style="display:flex;flex-direction:column;gap:4px;font-size:11px">
+              ${queueSlices.map(s => `<div style="display:flex;align-items:center;gap:6px">
+                <span style="width:8px;height:8px;border-radius:2px;background:${s.color};display:inline-block;flex-shrink:0"></span>
+                <span style="color:var(--text)">${esc(s.label)}</span>
+                <span style="color:var(--muted);margin-left:4px">${s.value} (${Math.round(s.value/rnaCount*100)}%)</span>
+              </div>`).join('')}
+            </div>
+          </div>` : '';
+
       html += `<div>
         <div class="modal-section-title">Ring No Answer</div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:${rnaEvts.length?'12':'0'}px">
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
           <div class="kpi" style="flex:1;min-width:90px"><div class="kpi-label">Missed Calls</div><div class="kpi-val" style="font-size:18px;color:var(--orange)">${rnaCount}</div></div>
           ${avgRing != null ? `<div class="kpi" style="flex:1;min-width:90px"><div class="kpi-label">Avg Ring Time</div><div class="kpi-val" style="font-size:18px">${fmtDur(avgRing)}</div></div>` : ''}
         </div>
-        ${rnaEvts.length ? `<table style="width:100%"><thead><tr>
+        ${rnaPieHtml}
+        ${rnaEvts.length ? `<div style="margin-top:12px"><table style="width:100%"><thead><tr>
           <th>Time</th><th>Queue</th><th>Client ID</th><th class="right">Ring Time</th><th>Exit</th>
         </tr></thead><tbody>
         ${rnaEvts.map(e => `<tr>
@@ -566,7 +587,7 @@ function buildModal(d, ag) {
           <td class="right">${e.ringtime ? fmtDur(e.ringtime) : '—'}</td>
           <td class="dim" style="font-size:11px">${esc(e.exit_reason||'—')}</td>
         </tr>`).join('')}
-        </tbody></table>` : ''}
+        </tbody></table></div>` : ''}
       </div>`;
     }
   }
@@ -664,38 +685,48 @@ function buildModal(d, ag) {
     blocks.forEach(b => {
       blockTotals[b.state] = (blockTotals[b.state] || 0) + (b.duration_seconds || 0);
     });
+    // Prefer daily_stats (from /agents/stats sync), fall back to summing blocks
     const logT   = ds.log_time    || (blockTotals.in_call || 0) + (blockTotals.available || 0) + (blockTotals.wrapup || 0);
     const pauseT = ds.pause_time  || blockTotals.paused    || 0;
-    const talkT  = blockTotals.in_call   || 0;
     const wrapT  = ds.wrapup_time || blockTotals.wrapup    || 0;
+    const idleT  = ds.idle_time   || 0;
+    const talkT  = blockTotals.in_call || 0;
+    // Active = everything except pause (log_time - pause_time)
+    const activeT = logT > 0 ? Math.max(logT - pauseT, 0) : 0;
 
-    const talkPct  = logT ? Math.round(talkT  / logT * 100) : 0;
-    const pausePct = logT ? Math.round(pauseT / logT * 100) : 0;
-    const wrapPct  = logT ? Math.round(wrapT  / logT * 100) : 0;
-    const idleT    = ds.idle_time || 0;
-    const idlePct  = logT ? Math.round(idleT  / logT * 100) : 0;
+    // Percentages of logged-in time
+    const activePct = logT ? Math.round(activeT / logT * 100) : 0;
+    const pausePct  = logT ? Math.round(pauseT  / logT * 100) : 0;
+    const wrapPct   = logT ? Math.round(wrapT   / logT * 100) : 0;
+    const idlePct   = logT ? Math.round(idleT   / logT * 100) : 0;
+    const talkPct   = logT ? Math.round(talkT   / logT * 100) : 0;
 
     html += `<div><div class="modal-section-title">Agent Day Summary${hasDailyStats ? ' <span style="font-size:10px;color:var(--muted)">(from BlueRock /agents/stats)</span>' : ' <span style="font-size:10px;color:var(--muted)">(from reconstructed blocks)</span>'}</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <div class="kpi" style="flex:1;min-width:90px">
+        <div class="kpi" style="flex:1;min-width:100px">
           <div class="kpi-label">Logged In</div>
           <div class="kpi-val" style="font-size:16px">${logT ? fmtDur(logT) : '—'}</div>
         </div>
-        <div class="kpi" style="flex:1;min-width:90px">
-          <div class="kpi-label">On Call${talkPct ? ` <span style="font-weight:400;color:var(--accent)">${talkPct}%</span>` : ''}</div>
-          <div class="kpi-val" style="color:var(--accent);font-size:16px">${talkT ? fmtDur(talkT) : '—'}</div>
+        <div class="kpi" style="flex:1;min-width:100px">
+          <div class="kpi-label">Active <span style="font-weight:400;color:var(--green);font-size:11px">${activePct ? activePct + '%' : ''}</span></div>
+          <div class="kpi-val" style="color:var(--green);font-size:16px">${activeT ? fmtDur(activeT) : '—'}</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:2px">log − pause</div>
         </div>
-        <div class="kpi" style="flex:1;min-width:90px">
-          <div class="kpi-label">Paused${pausePct ? ` <span style="font-weight:400;color:var(--orange)">${pausePct}%</span>` : ''}</div>
+        <div class="kpi" style="flex:1;min-width:100px">
+          <div class="kpi-label">Paused <span style="font-weight:400;color:var(--orange);font-size:11px">${pausePct ? pausePct + '%' : ''}</span></div>
           <div class="kpi-val" style="color:var(--orange);font-size:16px">${pauseT ? fmtDur(pauseT) : '—'}</div>
         </div>
-        <div class="kpi" style="flex:1;min-width:90px">
-          <div class="kpi-label">Wrap-up${wrapPct ? ` <span style="font-weight:400;color:var(--yellow)">${wrapPct}%</span>` : ''}</div>
-          <div class="kpi-val" style="color:var(--yellow);font-size:16px">${wrapT ? fmtDur(wrapT) : '—'}</div>
-        </div>
-        ${idleT > 0 ? `<div class="kpi" style="flex:1;min-width:90px">
-          <div class="kpi-label">Idle${idlePct ? ` <span style="font-weight:400;color:var(--muted)">${idlePct}%</span>` : ''}</div>
+        ${wrapT > 0 ? `<div class="kpi" style="flex:1;min-width:100px">
+          <div class="kpi-label">Wrap-up <span style="font-weight:400;color:var(--yellow);font-size:11px">${wrapPct ? wrapPct + '%' : ''}</span></div>
+          <div class="kpi-val" style="color:var(--yellow);font-size:16px">${fmtDur(wrapT)}</div>
+        </div>` : ''}
+        ${idleT > 0 ? `<div class="kpi" style="flex:1;min-width:100px">
+          <div class="kpi-label">Idle <span style="font-weight:400;color:var(--muted);font-size:11px">${idlePct ? idlePct + '%' : ''}</span></div>
           <div class="kpi-val" style="color:var(--muted);font-size:16px">${fmtDur(idleT)}</div>
+        </div>` : ''}
+        ${talkT > 0 ? `<div class="kpi" style="flex:1;min-width:100px">
+          <div class="kpi-label">On Call <span style="font-weight:400;color:var(--accent);font-size:11px">${talkPct ? talkPct + '%' : ''}</span></div>
+          <div class="kpi-val" style="color:var(--accent);font-size:16px">${fmtDur(talkT)}</div>
         </div>` : ''}
       </div></div>`;
 
