@@ -79,6 +79,11 @@ thead th {
   color: var(--muted); border-bottom: 1px solid var(--border); white-space: nowrap;
 }
 thead th.right { text-align: right; }
+thead th.sortable { cursor: pointer; user-select: none; }
+thead th.sortable:hover { color: var(--text); }
+thead th.sort-active { color: var(--accent); }
+thead th.sort-active::after { content: ' ▼'; font-size: 9px; }
+thead th.sort-active.sort-asc::after { content: ' ▲'; }
 tbody tr {
   border-bottom: 1px solid var(--border); cursor: pointer;
   transition: background .1s; border-left: 3px solid transparent;
@@ -182,23 +187,23 @@ tr.team-row td { font-weight: 700; border-top: 2px solid var(--border); backgrou
     <div class="table-wrap">
       <table>
         <thead>
-          <tr>
-            <th>Agent</th>
-            <th class="right">IB Calls</th>
-            <th class="right">Avg Talk</th>
-            <th class="right">Active Hrs</th>
-            <th class="right">Calls/Hr</th>
-            <th class="right">Avg Between</th>
-            <th class="right">&gt;2m</th>
-            <th class="right">&gt;5m</th>
-            <th class="right">&gt;10m</th>
-            <th class="right">&gt;20m</th>
-            <th class="right">Close%</th>
-            <th class="right">Deals</th>
-            <th class="right">CPS</th>
-            <th class="right">Avg Debt</th>
-            <th class="right">Avg 1st Pay</th>
-            <th class="right">RNA</th>
+          <tr id="agentHead">
+            <th class="sortable" data-col="full_name" onclick="sortBy('full_name')">Agent</th>
+            <th class="right sortable" data-col="total_calls" onclick="sortBy('total_calls')">IB Calls</th>
+            <th class="right sortable" data-col="avg_talk_sec" onclick="sortBy('avg_talk_sec')">Avg Talk</th>
+            <th class="right sortable" data-col="active_hrs" onclick="sortBy('active_hrs')">Active Hrs</th>
+            <th class="right sortable" data-col="calls_per_hour" onclick="sortBy('calls_per_hour')">Calls/Hr</th>
+            <th class="right sortable" data-col="avg_between_calls_sec" onclick="sortBy('avg_between_calls_sec')">Avg Between</th>
+            <th class="right sortable" data-col="pct_2min" onclick="sortBy('pct_2min')">&gt;2m</th>
+            <th class="right sortable" data-col="pct_5min" onclick="sortBy('pct_5min')">&gt;5m</th>
+            <th class="right sortable" data-col="pct_10min" onclick="sortBy('pct_10min')">&gt;10m</th>
+            <th class="right sortable" data-col="pct_20min" onclick="sortBy('pct_20min')">&gt;20m</th>
+            <th class="right sortable" data-col="close_pct_20min" onclick="sortBy('close_pct_20min')">Close%</th>
+            <th class="right sortable" data-col="total_deals" onclick="sortBy('total_deals')">Deals</th>
+            <th class="right sortable" data-col="cps" onclick="sortBy('cps')">CPS</th>
+            <th class="right sortable" data-col="avg_debt_enrolled" onclick="sortBy('avg_debt_enrolled')">Avg Debt</th>
+            <th class="right sortable" data-col="avg_first_payment" onclick="sortBy('avg_first_payment')">Avg 1st Pay</th>
+            <th class="right sortable" data-col="ring_no_answer" onclick="sortBy('ring_no_answer')">RNA</th>
           </tr>
         </thead>
         <tbody id="agentBody"></tbody>
@@ -237,6 +242,8 @@ let teamStats = {};
 let rnaData = {};
 let currentStart = null;
 let currentEnd   = null;
+let sortCol = 'total_calls';
+let sortDir = -1; // -1 = desc, 1 = asc
 
 // ── Date range ─────────────────────────────────────────────────────────────
 function todayISO() { return new Date().toISOString().slice(0, 10); }
@@ -316,15 +323,49 @@ function pctileRank(arr, value) {
   return Math.round((below / arr.length) * 100);
 }
 
+// ── Sort ───────────────────────────────────────────────────────────────────
+function getSortVal(a, col) {
+  switch (col) {
+    case 'full_name':   return (a.full_name || '').toLowerCase();
+    case 'active_hrs':  return a.active_time_sec > 0 ? a.active_time_sec / 3600 : (a.active_hours || 0);
+    case 'cps':         return a.cps != null ? a.cps : (a.total_deals > 0 ? a.total_calls / a.total_deals : null);
+    default:            return a[col] ?? null;
+  }
+}
+
+function sortBy(col) {
+  if (sortCol === col) { sortDir *= -1; } else { sortCol = col; sortDir = -1; }
+  renderTable();
+}
+
 // ── Table ──────────────────────────────────────────────────────────────────
 function renderTable() {
+  // Sort agents (team row always stays at bottom)
+  const sorted = [...agents].sort((a, b) => {
+    const va = getSortVal(a, sortCol), vb = getSortVal(b, sortCol);
+    if (va == null && vb == null) return 0;
+    if (va == null) return 1;
+    if (vb == null) return -1;
+    if (typeof va === 'string') return va.localeCompare(vb) * sortDir;
+    return (va - vb) * sortDir;
+  });
+
+  // Update header sort indicators
+  document.querySelectorAll('#agentHead th[data-col]').forEach(th => {
+    th.classList.remove('sort-active', 'sort-asc');
+    if (th.dataset.col === sortCol) {
+      th.classList.add('sort-active');
+      if (sortDir === 1) th.classList.add('sort-asc');
+    }
+  });
+
   // Pre-compute percentile arrays
   const vals2  = agents.map(a => a.pct_2min  || 0);
   const vals5  = agents.map(a => a.pct_5min  || 0);
   const vals10 = agents.map(a => a.pct_10min || 0);
   const vals20 = agents.map(a => a.pct_20min || 0);
 
-  let rows = agents.map((a, i) => {
+  let rows = sorted.map((a, i) => {
     // Active hours display
     const activeHrsDisplay = fmtActiveHrs(a);
 
