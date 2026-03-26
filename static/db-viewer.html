@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DB Viewer — Call Center</title>
+<title>DB Viewer - Call Center</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -48,7 +48,7 @@
 </head>
 <body>
 <nav>
-  <span class="logo">📞 CC Dashboard</span>
+  <span class="logo">CC Dashboard</span>
   <a href="/">Dashboard</a>
   <a href="/agents.html">Agents</a>
   <a href="/db-viewer.html" class="active">DB Viewer</a>
@@ -56,7 +56,7 @@
 <div class="page">
   <h1>Database Viewer</h1>
   <div class="layout">
-    <div class="table-list" id="tableList">Loading…</div>
+    <div class="table-list" id="tableList">Loading...</div>
     <div class="main" id="main">
       <div class="empty">Select a table on the left</div>
     </div>
@@ -104,8 +104,8 @@ async function loadTable(name, newOffset = 0) {
 
   main.innerHTML = `
     <div class="toolbar">
-      <input id="searchInput" placeholder="Search all columns…" value="${esc(search)}" oninput="onSearch()">
-      <span class="info">${total.toLocaleString()} rows${search ? ' (filtered)' : ''} · showing ${start}–${end}</span>
+      <input id="searchInput" placeholder="Search all columns..." value="${esc(search)}" oninput="onSearch()">
+      <span class="info">${total.toLocaleString()} rows${search ? ' (filtered)' : ''} · showing ${start}-${end}</span>
     </div>
     <div class="table-wrap">
       <table>
@@ -115,7 +115,7 @@ async function loadTable(name, newOffset = 0) {
             ${v === null || v === '' ? '<span class="null">null</span>' : esc(String(v))}
           </td>`).join('');
           const recBtn = isCalls && idIdx >= 0
-            ? `<td><button onclick="dlRec('${esc(String(r[idIdx]))}')" title="Download recording" style="background:none;border:none;cursor:pointer;color:var(--accent);font-size:14px;padding:0">🎧</button></td>`
+            ? `<td><button onclick="dlRec('${esc(String(r[idIdx]))}')" title="Download recording" style="background:none;border:none;cursor:pointer;color:var(--accent);font-size:11px;padding:0">REC</button></td>`
             : '';
           return `<tr>${cells}${recBtn}</tr>`;
         }).join('') : `<tr><td colspan="${cols.length + (isCalls?1:0)}" class="empty">No rows</td></tr>`}

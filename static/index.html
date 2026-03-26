@@ -137,13 +137,13 @@ tr.team-row td { font-weight: 700; border-top: 2px solid var(--border); backgrou
 <body>
 
 <nav>
-  <span class="logo">📞 CC Dashboard</span>
+  <span class="logo">CC Dashboard</span>
   <a href="/" class="active">Dashboard</a>
   <a href="/agents.html">Agents</a>
   <a href="/db-viewer.html">DB Viewer</a>
   <div class="nav-right">
     <span class="sync-dot" id="syncDot"></span>
-    <span id="sync-time">Loading…</span>
+    <span id="sync-time">Loading...</span>
   </div>
 </nav>
 
@@ -244,11 +244,11 @@ function updateDateLabel() {
   const lbl = document.getElementById('dateRangeLabel');
   const title = document.getElementById('tableTitle');
   if (!currentStart && !currentEnd) {
-    lbl.textContent = ''; title.textContent = 'Agent Performance — Today';
+    lbl.textContent = ''; title.textContent = 'Agent Performance: Today';
   } else {
     const s = currentStart || todayISO(), e = currentEnd || todayISO();
-    const r = s === e ? s : `${s} → ${e}`;
-    lbl.textContent = `Showing: ${r}`; title.textContent = `Agent Performance — ${r}`;
+    const r = s === e ? s : `${s} to ${e}`;
+    lbl.textContent = `Showing: ${r}`; title.textContent = `Agent Performance: ${r}`;
   }
 }
 function buildAPIParams() {
@@ -422,8 +422,8 @@ async function openModal(agentName) {
   const bg = document.getElementById('modalBg');
   const body = document.getElementById('modalBody');
   document.getElementById('modalTitle').textContent =
-    (agents.find(a => a.agent_name === agentName)?.full_name || agentName) + ' — Detail';
-  body.innerHTML = '<div style="padding:32px;text-align:center;color:var(--muted)">Loading…</div>';
+    (agents.find(a => a.agent_name === agentName)?.full_name || agentName) + ' - Detail';
+  body.innerHTML = '<div style="padding:32px;text-align:center;color:var(--muted)">Loading...</div>';
   bg.classList.add('open');
   try {
     const d = await fetch(`/api/agents/${encodeURIComponent(agentName)}`).then(r => r.json());
@@ -446,7 +446,7 @@ function buildModal(d, ag) {
   const info = d.agent_info || {};
   const mappingStr = info.short_name
     ? `${info.short_name}${info.full_name ? ' / ' + info.full_name : ''} → ${info.bluerock_username || '?'}`
-    : `<span style="color:var(--yellow)">BlueRock user: <strong>${esc(d.agent_name || '')}</strong> — not matched in roster (deals won't attribute)</span>`;
+    : `<span style="color:var(--yellow)">BlueRock user: <strong>${esc(d.agent_name || '')}</strong> - not matched in roster (deals won't attribute)</span>`;
 
   let html = `<div>
     <div class="modal-section-title">Overview</div>
@@ -620,7 +620,7 @@ function buildModal(d, ag) {
     const tlTimeToMin = ts => { const p = (ts||'').slice(11,16).split(':'); return parseInt(p[0]||0)*60+parseInt(p[1]||0); };
 
     let rows = '';
-    rows += `<tr><td colspan="7" style="padding:4px 8px;font-size:10px;color:var(--muted);background:rgba(255,255,255,.03)">▸ Business hours start — 7:00 AM</td></tr>`;
+    rows += `<tr><td colspan="7" style="padding:4px 8px;font-size:10px;color:var(--muted);background:rgba(255,255,255,.03)">Business hours start: 7:00 AM</td></tr>`;
 
     let prevEndMs = null;
     tlCalls.forEach(c => {
@@ -632,7 +632,7 @@ function buildModal(d, ag) {
         const gapSec = Math.round((callMs - prevEndMs) / 1000);
         if (gapSec >= 60) {
           const big = gapSec >= 1800;
-          rows += `<tr><td colspan="7" style="padding:2px 12px;font-size:10px;color:${big?'var(--yellow)':'var(--muted)'};opacity:.7">${big?'⏸ ':''}${tlGapLabel(gapSec)}${big?' — possible break/pause':''}</td></tr>`;
+          rows += `<tr><td colspan="7" style="padding:2px 12px;font-size:10px;color:${big?'var(--yellow)':'var(--muted)'};opacity:.7">${tlGapLabel(gapSec)}${big?' - possible break/pause':''}</td></tr>`;
         }
       }
 
@@ -648,16 +648,16 @@ function buildModal(d, ag) {
         <td class="fmono dim" style="font-size:11px">${esc(c.phone_number||'—')}</td>
         <td class="right"><span class="pill ${durCls}">${fmtDur(dur)}</span></td>
         <td class="dim" style="font-size:11px">${esc(c.exit_reason||'—')}</td>
-        <td>${c.id ? `<button onclick="dlRec('${esc(c.id)}')" title="Download recording" style="background:none;border:none;cursor:pointer;color:var(--accent);font-size:14px;padding:0">🎧</button>` : ''}</td>
+        <td>${c.id ? `<button onclick="dlRec('${esc(c.id)}')" title="Download recording" style="background:none;border:none;cursor:pointer;color:var(--accent);font-size:11px;padding:0">REC</button>` : ''}</td>
       </tr>`;
       prevEndMs = endMs;
     });
 
-    rows += `<tr><td colspan="7" style="padding:4px 8px;font-size:10px;color:var(--muted);background:rgba(255,255,255,.03)">◾ Business hours end — 4:00 PM</td></tr>`;
+    rows += `<tr><td colspan="7" style="padding:4px 8px;font-size:10px;color:var(--muted);background:rgba(255,255,255,.03)">Business hours end: 4:00 PM</td></tr>`;
 
     const tlTitle = tlCalls.length
-      ? `Call Records — ${tlCalls.length} calls · business hrs 7 AM–4 PM`
-      : `Call Records — none today`;
+      ? `Call Records: ${tlCalls.length} calls (business hrs 7 AM - 4 PM)`
+      : `Call Records: none today`;
     html += `<div><div class="modal-section-title">${tlTitle}</div>
       <table style="width:100%"><thead><tr>
         <th>Time</th><th>Type</th><th>Queue</th><th>Client ID</th><th class="right">Duration</th><th>Exit</th><th></th>
