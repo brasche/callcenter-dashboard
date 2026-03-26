@@ -91,6 +91,23 @@ _MIGRATIONS = [
         synced_at      TEXT DEFAULT NOW()::TEXT,
         UNIQUE(agent_name, date)
     )""",
+    """CREATE TABLE IF NOT EXISTS ring_no_answer_events (
+        id             SERIAL PRIMARY KEY,
+        queue          TEXT NOT NULL,
+        event_at       TEXT NOT NULL,
+        callerid       TEXT,
+        trunk          TEXT,
+        ringtime       INTEGER,
+        agent          TEXT,
+        enter_position INTEGER,
+        exit_reason    TEXT,
+        exit_key       TEXT,
+        exit_position  INTEGER,
+        synced_at      TEXT DEFAULT NOW()::TEXT,
+        UNIQUE(queue, event_at, callerid)
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_rna_agent_date ON ring_no_answer_events(agent, event_at)",
+    "CREATE INDEX IF NOT EXISTS idx_rna_queue_date ON ring_no_answer_events(queue, event_at)",
 ]
 
 

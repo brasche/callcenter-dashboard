@@ -151,6 +151,36 @@ async def _upsert_calls(calls: list[dict]) -> int:
     return len(calls)
 
 
+_UPSERT_RNA = """
+INSERT INTO ring_no_answer_events
+    (queue, event_at, callerid, trunk, ringtime, agent,
+     enter_position, exit_reason, exit_key, exit_position)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+ON CONFLICT(queue, event_at, callerid) DO NOTHING
+"""
+
+
+async def _upsert_rna_events(events: list[dict], queue: str) -> int:
+    if not events:
+        return 0
+    async with get_db() as db:
+        for e in events:
+            await db.execute(
+                _UPSERT_RNA,
+                queue,
+                e.get("datetime") or "",
+                e.get("callerid") or "",
+                e.get("trunk") or "",
+                int(e.get("ringtime") or 0),
+                e.get("agent") or "",
+                int(e.get("enter_position") or 0),
+                e.get("exit_reason") or "",
+                e.get("exit_key") or "",
+                int(e.get("exit_position") or 0),
+            )
+    return len(events)
+
+
 async def _update_sync_log(source: str, records: int, error: str | None = None):
     async with get_db() as db:
         await db.execute(
@@ -261,6 +291,15 @@ async def sync_bluerock():
                                     }
                             except Exception:
                                 pass
+
+                rna_resp = await _get(client, f"/queue/{queue_name}/ringnoanswer/today")
+                if rna_resp:
+                    raw_rna = (rna_resp.get("ringnoanswer")
+                               or rna_resp.get("ring_no_answer")
+                               or rna_resp.get("calls")
+                               or [])
+                    await _upsert_rna_events(raw_rna, queue_name)
+                    logger.debug("Queue %s: %d RNA events upserted", queue_name, len(raw_rna))
 
                 avail_resp = await _get(client, f"/queue/{queue_name}/agentsavailable")
                 if avail_resp is not None:

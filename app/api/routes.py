@@ -241,6 +241,21 @@ async def get_agents(start: Optional[str] = Query(None), end: Optional[str] = Qu
         # ── Activity cache ────────────────────────────────────────────────
         activity = get_agent_activity()
 
+        # ── Ring no answer counts per agent ──────────────────────────────
+        rna_counts: dict[str, int] = {
+            r["agent"]: r["rna_count"]
+            for r in await db.fetch(
+                """
+                SELECT agent, COUNT(*) AS rna_count
+                FROM ring_no_answer_events
+                WHERE event_at BETWEEN $1 AND $2
+                  AND agent IS NOT NULL AND agent != ''
+                GROUP BY agent
+                """,
+                start_dt, end_dt,
+            )
+        }
+
         # ── Avg time between IB calls ─────────────────────────────────────
         between_rows = {
             r["agent_name"]: dict(r)
@@ -340,6 +355,7 @@ async def get_agents(start: Optional[str] = Query(None), end: Optional[str] = Qu
             "first_call":             ag["first_call"],
             "last_call":              ag["last_call"],
             "cps":                    0,
+            "ring_no_answer":         rna_counts.get(br_name, 0),
         })
 
     # ── Stitch deal data ──────────────────────────────────────────────────
@@ -480,6 +496,17 @@ async def get_agent_detail(
             agent_name, date_str,
         )]
 
+        # Ring no answer events for this agent on this date
+        rna_events = [_row_to_dict(r) for r in await db.fetch(
+            """
+            SELECT queue, event_at, callerid, ringtime, exit_reason
+            FROM ring_no_answer_events
+            WHERE agent = $1 AND event_at LIKE $2 || '%'
+            ORDER BY event_at ASC
+            """,
+            agent_name, date_str,
+        )]
+
         # Daily stats
         daily_stats_row = await db.fetchrow(
             """SELECT log_time, pause_time, wrapup_time, idle_time,
@@ -522,6 +549,7 @@ async def get_agent_detail(
         "deals":                  deals,
         "state_blocks":           state_blocks,
         "daily_stats":            daily_stats,
+        "rna_events":             rna_events,
     }
 
 
@@ -579,6 +607,35 @@ async def get_team(start: Optional[str] = Query(None), end: Optional[str] = Quer
         "avg_first_payment": round(ds["avg_first_payment"] or 0, 2),
         "total_deal_value":  round(ds["total_value"] or 0, 2),
         "cps":               round(total / total_deals, 1) if total_deals else None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# /api/rna  — ring no answer summary
+# ---------------------------------------------------------------------------
+
+@router.get("/rna")
+async def get_rna(start: Optional[str] = Query(None), end: Optional[str] = Query(None)):
+    start_dt, end_dt = _date_range(start, end)
+    async with get_db() as db:
+        agent_rows = [_row_to_dict(r) for r in await db.fetch(
+            """
+            SELECT agent, COUNT(*) AS rna_count,
+                   AVG(ringtime) AS avg_ringtime,
+                   COUNT(DISTINCT queue) AS queues_hit
+            FROM ring_no_answer_events
+            WHERE event_at BETWEEN $1 AND $2
+              AND agent IS NOT NULL AND agent != ''
+            GROUP BY agent
+            ORDER BY rna_count DESC
+            """,
+            start_dt, end_dt,
+        )]
+        total = sum(r["rna_count"] for r in agent_rows)
+    return {
+        "agents": agent_rows,
+        "total":  total,
+        "as_of":  datetime.now(timezone.utc).isoformat(),
     }
 
 

@@ -172,6 +172,17 @@ tr.team-row td { font-weight: 700; border-top: 2px solid var(--border); backgrou
     <div class="kpi"><div class="kpi-label">Avg 1st Pay</div><div class="kpi-val" id="kAvgPay">—</div></div>
   </div>
 
+  <div id="rnaCard" class="card" style="display:none;margin-bottom:16px">
+    <div class="card-header">
+      <span class="card-title">Ring No Answer Distribution</span>
+      <span class="dim" style="font-size:11px" id="rnaTotalLabel"></span>
+    </div>
+    <div style="padding:16px;display:flex;align-items:center;gap:24px;flex-wrap:wrap">
+      <canvas id="rnaCanvas" width="140" height="140" style="flex-shrink:0"></canvas>
+      <div id="rnaLegend" style="display:flex;flex-direction:column;gap:6px;font-size:12px;min-width:160px"></div>
+    </div>
+  </div>
+
   <div class="card">
     <div class="card-header">
       <span class="card-title" id="tableTitle">Agent Performance — Today</span>
@@ -198,6 +209,7 @@ tr.team-row td { font-weight: 700; border-top: 2px solid var(--border); backgrou
             <th class="right">CPS</th>
             <th class="right">Avg Debt</th>
             <th class="right">Avg 1st Pay</th>
+            <th class="right">RNA</th>
           </tr>
         </thead>
         <tbody id="agentBody"></tbody>
@@ -221,6 +233,7 @@ tr.team-row td { font-weight: 700; border-top: 2px solid var(--border); backgrou
 // ── State ─────────────────────────────────────────────────────────────────
 let agents = [];
 let teamStats = {};
+let rnaData = {};
 let currentStart = null;
 let currentEnd   = null;
 
@@ -262,14 +275,17 @@ function buildAPIParams() {
 async function fetchAll() {
   try {
     const qs = buildAPIParams();
-    const [agRes, teamRes] = await Promise.all([
+    const [agRes, teamRes, rnaRes] = await Promise.all([
       fetch('/api/agents' + qs).then(r => r.json()),
       fetch('/api/team'   + qs).then(r => r.json()),
+      fetch('/api/rna'    + qs).then(r => r.json()),
     ]);
     agents    = agRes.agents || [];
     teamStats = teamRes      || {};
+    rnaData   = rnaRes       || {};
     renderKPIs();
     renderTable();
+    renderRnaChart();
     updateSyncTime(true);
   } catch(e) {
     updateSyncTime(false);
@@ -336,17 +352,23 @@ function renderTable() {
       <td class="right">${(()=>{ const v = a.cps != null ? a.cps : (a.total_deals > 0 ? +(a.total_calls / a.total_deals).toFixed(1) : null); return v != null ? v : '<span class="dim">—</span>'; })()}</td>
       <td class="right">${a.avg_debt_enrolled ? dollar(a.avg_debt_enrolled) : '<span class="dim">—</span>'}</td>
       <td class="right">${a.avg_first_payment ? dollar(a.avg_first_payment) : '<span class="dim">—</span>'}</td>
+      <td class="right">${a.ring_no_answer > 0 ? `<span style="color:var(--orange)">${a.ring_no_answer}</span>` : '<span class="dim">0</span>'}</td>
     </tr>`;
   }).join('');
 
   // Team row
   const t = teamStats;
+  const teamActiveHrs = agents.reduce((sum, a) => {
+    const hrs = (a.active_time_sec > 0) ? a.active_time_sec / 3600 : (a.active_hours || 0);
+    return sum + hrs;
+  }, 0);
+  const teamCallsPerHr = teamActiveHrs > 0 ? (t.total_calls / teamActiveHrs).toFixed(1) : null;
   rows += `<tr class="team-row">
     <td>Team Total</td>
     <td class="right">${t.total_calls ?? '—'}</td>
     <td class="right">${fmtDur(t.avg_talk_sec)}</td>
-    <td class="right">—</td>
-    <td class="right">—</td>
+    <td class="right">${teamActiveHrs > 0 ? teamActiveHrs.toFixed(2) + 'h' : '—'}</td>
+    <td class="right">${teamCallsPerHr ?? '—'}</td>
     <td class="right">—</td>
     <td class="right"><div class="cp-cell">${cpBarTeam(t.pct_2min,  'fill-2')}</div></td>
     <td class="right"><div class="cp-cell">${cpBarTeam(t.pct_5min,  'fill-5')}</div></td>
@@ -357,16 +379,77 @@ function renderTable() {
     <td class="right">${(()=>{ const v = t.cps != null ? t.cps : (t.total_deals > 0 ? +(t.total_calls / t.total_deals).toFixed(1) : null); return v != null ? v : '—'; })()}</td>
     <td class="right">${dollar(t.avg_debt_enrolled)}</td>
     <td class="right">${dollar(t.avg_first_payment)}</td>
+    <td class="right">${(rnaData.total || 0) > 0 ? `<span style="color:var(--orange)">${rnaData.total}</span>` : '<span class="dim">0</span>'}</td>
   </tr>`;
 
   document.getElementById('agentBody').innerHTML = rows;
 }
 
 
+// ── RNA pie chart ─────────────────────────────────────────────────────────
+const RNA_COLORS = ['#f97316','#eab308','#ef4444','#a855f7','#4f6ef7','#22c55e','#06b6d4','#ec4899'];
+
+function renderRnaChart() {
+  const card = document.getElementById('rnaCard');
+  const agts = (rnaData.agents || []).filter(a => a.rna_count > 0);
+  const total = rnaData.total || 0;
+  if (!total || !agts.length) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  document.getElementById('rnaTotalLabel').textContent = total + ' total missed';
+
+  const canvas = document.getElementById('rnaCanvas');
+  const ctx = canvas.getContext('2d');
+  const cx = 70, cy = 70, r = 58, hole = 34;
+  ctx.clearRect(0, 0, 140, 140);
+
+  let angle = -Math.PI / 2;
+  agts.forEach((a, i) => {
+    const slice = (a.rna_count / total) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, angle, angle + slice);
+    ctx.closePath();
+    ctx.fillStyle = RNA_COLORS[i % RNA_COLORS.length];
+    ctx.fill();
+    angle += slice;
+  });
+
+  // Donut hole
+  ctx.beginPath();
+  ctx.arc(cx, cy, hole, 0, Math.PI * 2);
+  ctx.fillStyle = '#1a1d27';
+  ctx.fill();
+
+  // Center label
+  ctx.fillStyle = '#e2e8f0';
+  ctx.font = 'bold 18px Segoe UI, system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(total, cx, cy);
+
+  // Legend
+  const legendEl = document.getElementById('rnaLegend');
+  legendEl.innerHTML = agts.slice(0, 8).map((a, i) => {
+    const pct = Math.round(a.rna_count / total * 100);
+    const name = agents.find(ag => ag.agent_name === a.agent)?.full_name || a.agent;
+    return `<div style="display:flex;align-items:center;gap:8px">
+      <span style="width:10px;height:10px;border-radius:2px;background:${RNA_COLORS[i % RNA_COLORS.length]};flex-shrink:0;display:inline-block"></span>
+      <span style="color:var(--text)">${esc(name)}</span>
+      <span style="color:var(--muted);margin-left:auto;padding-left:8px">${a.rna_count} <span style="font-size:10px">(${pct}%)</span></span>
+    </div>`;
+  }).join('');
+}
+
 // ── Formatters ─────────────────────────────────────────────────────────────
 function fmtDur(sec) {
   if (!sec && sec !== 0) return '—';
   sec = Math.round(sec);
+  if (sec >= 3600) {
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    return s > 0 ? `${h}h ${m}m ${s}s` : (m > 0 ? `${h}h ${m}m` : `${h}h`);
+  }
   const m = Math.floor(sec / 60), s = sec % 60;
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
@@ -458,6 +541,35 @@ function buildModal(d, ag) {
     </div>
     <div style="margin-top:8px;font-size:11px;color:var(--muted)">Name mapping: ${mappingStr}</div>
     </div>`;
+
+  // ── Ring No Answer summary ────────────────────────────────────────────────
+  {
+    const rnaEvts = d.rna_events || [];
+    const rnaCount = ag?.ring_no_answer || rnaEvts.length || 0;
+    if (rnaCount > 0) {
+      const avgRing = rnaEvts.length
+        ? Math.round(rnaEvts.reduce((s, e) => s + (e.ringtime || 0), 0) / rnaEvts.length)
+        : null;
+      html += `<div>
+        <div class="modal-section-title">Ring No Answer</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:${rnaEvts.length?'12':'0'}px">
+          <div class="kpi" style="flex:1;min-width:90px"><div class="kpi-label">Missed Calls</div><div class="kpi-val" style="font-size:18px;color:var(--orange)">${rnaCount}</div></div>
+          ${avgRing != null ? `<div class="kpi" style="flex:1;min-width:90px"><div class="kpi-label">Avg Ring Time</div><div class="kpi-val" style="font-size:18px">${fmtDur(avgRing)}</div></div>` : ''}
+        </div>
+        ${rnaEvts.length ? `<table style="width:100%"><thead><tr>
+          <th>Time</th><th>Queue</th><th>Client ID</th><th class="right">Ring Time</th><th>Exit</th>
+        </tr></thead><tbody>
+        ${rnaEvts.map(e => `<tr>
+          <td class="fmono dim" style="font-size:11px">${fmtTime(e.event_at)}</td>
+          <td>${esc(e.queue||'—')}</td>
+          <td class="fmono dim" style="font-size:11px">${esc(e.callerid||'—')}</td>
+          <td class="right">${e.ringtime ? fmtDur(e.ringtime) : '—'}</td>
+          <td class="dim" style="font-size:11px">${esc(e.exit_reason||'—')}</td>
+        </tr>`).join('')}
+        </tbody></table>` : ''}
+      </div>`;
+    }
+  }
 
   if (d.queues?.length) {
     html += `<div><div class="modal-section-title">By Queue</div>
@@ -557,12 +669,34 @@ function buildModal(d, ag) {
     const talkT  = blockTotals.in_call   || 0;
     const wrapT  = ds.wrapup_time || blockTotals.wrapup    || 0;
 
+    const talkPct  = logT ? Math.round(talkT  / logT * 100) : 0;
+    const pausePct = logT ? Math.round(pauseT / logT * 100) : 0;
+    const wrapPct  = logT ? Math.round(wrapT  / logT * 100) : 0;
+    const idleT    = ds.idle_time || 0;
+    const idlePct  = logT ? Math.round(idleT  / logT * 100) : 0;
+
     html += `<div><div class="modal-section-title">Agent Day Summary${hasDailyStats ? ' <span style="font-size:10px;color:var(--muted)">(from BlueRock /agents/stats)</span>' : ' <span style="font-size:10px;color:var(--muted)">(from reconstructed blocks)</span>'}</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <div class="kpi" style="flex:1;min-width:90px"><div class="kpi-label">Logged In</div><div class="kpi-val" style="font-size:16px">${logT ? fmtDur(logT) : '—'}</div></div>
-        <div class="kpi" style="flex:1;min-width:90px"><div class="kpi-label">On Call</div><div class="kpi-val" style="color:var(--accent);font-size:16px">${talkT ? fmtDur(talkT) : '—'}</div></div>
-        <div class="kpi" style="flex:1;min-width:90px"><div class="kpi-label">Paused</div><div class="kpi-val" style="color:var(--orange);font-size:16px">${pauseT ? fmtDur(pauseT) : '—'}</div></div>
-        <div class="kpi" style="flex:1;min-width:90px"><div class="kpi-label">Wrap-up</div><div class="kpi-val" style="color:var(--yellow);font-size:16px">${wrapT ? fmtDur(wrapT) : '—'}</div></div>
+        <div class="kpi" style="flex:1;min-width:90px">
+          <div class="kpi-label">Logged In</div>
+          <div class="kpi-val" style="font-size:16px">${logT ? fmtDur(logT) : '—'}</div>
+        </div>
+        <div class="kpi" style="flex:1;min-width:90px">
+          <div class="kpi-label">On Call${talkPct ? ` <span style="font-weight:400;color:var(--accent)">${talkPct}%</span>` : ''}</div>
+          <div class="kpi-val" style="color:var(--accent);font-size:16px">${talkT ? fmtDur(talkT) : '—'}</div>
+        </div>
+        <div class="kpi" style="flex:1;min-width:90px">
+          <div class="kpi-label">Paused${pausePct ? ` <span style="font-weight:400;color:var(--orange)">${pausePct}%</span>` : ''}</div>
+          <div class="kpi-val" style="color:var(--orange);font-size:16px">${pauseT ? fmtDur(pauseT) : '—'}</div>
+        </div>
+        <div class="kpi" style="flex:1;min-width:90px">
+          <div class="kpi-label">Wrap-up${wrapPct ? ` <span style="font-weight:400;color:var(--yellow)">${wrapPct}%</span>` : ''}</div>
+          <div class="kpi-val" style="color:var(--yellow);font-size:16px">${wrapT ? fmtDur(wrapT) : '—'}</div>
+        </div>
+        ${idleT > 0 ? `<div class="kpi" style="flex:1;min-width:90px">
+          <div class="kpi-label">Idle${idlePct ? ` <span style="font-weight:400;color:var(--muted)">${idlePct}%</span>` : ''}</div>
+          <div class="kpi-val" style="color:var(--muted);font-size:16px">${fmtDur(idleT)}</div>
+        </div>` : ''}
       </div></div>`;
 
     // ── Horizontal state bar ──────────────────────────────────────────────
