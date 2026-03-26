@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Roster — Call Center</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0f1117;
+    --surface:   #1a1d27;
+    --surface2:  #22263a;
+    --border:    #2e3250;
+    --accent:    #4f8ef7;
+    --accent-h:  #6aa3ff;
+    --green:     #2ecc71;
+    --red:       #e74c3c;
+    --yellow:    #f1c40f;
+    --text:      #e8eaf0;
+    --muted:     #7b82a0;
+    --radius:    8px;
+  }
+
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; min-height: 100vh; }
+
+  /* ── Nav ── */
+  nav { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 24px; display: flex; align-items: center; height: 54px; gap: 4px; }
+  nav .logo { font-weight: 700; font-size: 16px; color: var(--accent); margin-right: 24px; white-space: nowrap; }
+  nav a { color: var(--muted); text-decoration: none; padding: 6px 14px; border-radius: var(--radius); font-size: 13px; transition: color .15s, background .15s; }
+  nav a:hover { color: var(--text); background: var(--surface2); }
+  nav a.active { color: var(--text); background: var(--surface2); font-weight: 600; }
+
+  /* ── Layout ── */
+  .page { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+  .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+  .page-header h1 { font-size: 22px; font-weight: 700; }
+  .page-header p  { color: var(--muted); font-size: 13px; margin-top: 4px; }
+
+  /* ── Buttons ── */
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: var(--radius); border: none; cursor: pointer; font-size: 13px; font-weight: 600; transition: background .15s, opacity .15s; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn-primary  { background: var(--accent); color: #fff; }
+  .btn-primary:hover:not(:disabled)  { background: var(--accent-h); }
+  .btn-danger   { background: transparent; color: var(--red); border: 1px solid var(--red); padding: 5px 11px; }
+  .btn-danger:hover:not(:disabled)   { background: rgba(231,76,60,.12); }
+  .btn-ghost    { background: transparent; color: var(--muted); border: 1px solid var(--border); padding: 5px 11px; }
+  .btn-ghost:hover:not(:disabled)    { color: var(--text); border-color: var(--muted); }
+  .btn-save     { background: var(--green); color: #000; padding: 5px 14px; }
+  .btn-save:hover:not(:disabled)     { filter: brightness(1.1); }
+
+  /* ── Card / Table ── */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+
+  table { width: 100%; border-collapse: collapse; }
+  thead th { background: var(--surface2); padding: 11px 14px; text-align: left; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--border); white-space: nowrap; }
+  tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: rgba(255,255,255,.03); }
+  tbody td { padding: 10px 14px; vertical-align: middle; }
+
+  /* ── Inline edit inputs ── */
+  .cell-input {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--text);
+    font-size: 13px;
+    padding: 5px 8px;
+    width: 100%;
+    outline: none;
+    transition: border-color .15s;
+  }
+  .cell-input:focus { border-color: var(--accent); }
+  .cell-input.dirty { border-color: var(--yellow); }
+
+  /* ── Status badge ── */
+  .badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+  .badge-active   { background: rgba(46,204,113,.15); color: var(--green); }
+  .badge-inactive { background: rgba(231,76,60,.12); color: var(--red); }
+
+  /* ── Add row form ── */
+  .add-row { background: rgba(79,142,247,.06); border-top: 2px dashed var(--accent); }
+  .add-row td { padding: 12px 14px; }
+
+  /* ── Toast ── */
+  #toast { position: fixed; bottom: 28px; right: 28px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 20px; font-size: 13px; color: var(--text); opacity: 0; transform: translateY(8px); transition: opacity .25s, transform .25s; pointer-events: none; z-index: 999; }
+  #toast.show { opacity: 1; transform: translateY(0); }
+  #toast.ok   { border-color: var(--green); color: var(--green); }
+  #toast.err  { border-color: var(--red);   color: var(--red); }
+
+  /* ── Util ── */
+  .actions { display: flex; gap: 6px; justify-content: flex-end; }
+  .col-actions { width: 160px; text-align: right; }
+  .col-status  { width: 90px; }
+  .col-toggle  { width: 60px; text-align: center; }
+</style>
+</head>
+<body>
+
+<nav>
+  <span class="logo">📞 CC Dashboard</span>
+  <a href="/">Dashboard</a>
+  <a href="/agents.html" class="active">Agents</a>
+  <a href="/db-viewer.html">DB Viewer</a>
+</nav>
+
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>Agent Roster</h1>
+      <p>Map each agent's BlueRock username and sales board display name. Changes save instantly.</p>
+    </div>
+    <button class="btn btn-primary" onclick="showAddRow()">+ Add Agent</button>
+  </div>
+
+  <div class="card">
+    <table id="agentTable">
+      <thead>
+        <tr>
+          <th>Full Name</th>
+          <th>Sales Board Name</th>
+          <th>BlueRock Username</th>
+          <th>Email</th>
+          <th class="col-status">Status</th>
+          <th class="col-actions">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="agentBody">
+        <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:32px">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+let agents = [];
+let editingId = null;
+let addRowVisible = false;
+
+// ── Fetch & Render ──────────────────────────────────────────────
+async function load() {
+  const res = await fetch('/api/roster');
+  const data = await res.json();
+  agents = data.agents || [];
+  render();
+}
+
+function render() {
+  const tbody = document.getElementById('agentBody');
+  let html = agents.map(a => rowHtml(a)).join('');
+  if (addRowVisible) html += addRowHtml();
+  tbody.innerHTML = html || '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:32px">No agents yet. Click "+ Add Agent" to get started.</td></tr>';
+}
+
+function rowHtml(a) {
+  const isEditing = editingId === a.id;
+  const statusBadge = a.active
+    ? '<span class="badge badge-active">Active</span>'
+    : '<span class="badge badge-inactive">Inactive</span>';
+
+  if (isEditing) {
+    return `<tr data-id="${a.id}">
+      <td><input class="cell-input" id="e_full_name"          value="${esc(a.full_name  || '')}" placeholder="Full name"></td>
+      <td><input class="cell-input" id="e_short_name"         value="${esc(a.short_name || '')}" placeholder="e.g. Jose F"></td>
+      <td><input class="cell-input" id="e_bluerock_username"  value="${esc(a.bluerock_username || '')}" placeholder="e.g. joef"></td>
+      <td><input class="cell-input" id="e_email"              value="${esc(a.email || '')}" placeholder="email@example.com"></td>
+      <td class="col-status">
+        <select class="cell-input" id="e_active" style="padding:4px 6px">
+          <option value="1" ${a.active ? 'selected' : ''}>Active</option>
+          <option value="0" ${!a.active ? 'selected' : ''}>Inactive</option>
+        </select>
+      </td>
+      <td class="col-actions">
+        <div class="actions">
+          <button class="btn btn-save"  onclick="saveEdit(${a.id})">Save</button>
+          <button class="btn btn-ghost" onclick="cancelEdit()">Cancel</button>
+        </div>
+      </td>
+    </tr>`;
+  }
+
+  return `<tr data-id="${a.id}">
+    <td>${esc(a.full_name  || '—')}</td>
+    <td>${esc(a.short_name || '—')}</td>
+    <td>${a.bluerock_username ? `<code style="background:var(--surface2);padding:2px 6px;border-radius:4px;font-size:12px">${esc(a.bluerock_username)}</code>` : '<span style="color:var(--muted)">—</span>'}</td>
+    <td style="color:var(--muted)">${esc(a.email || '—')}</td>
+    <td class="col-status">${statusBadge}</td>
+    <td class="col-actions">
+      <div class="actions">
+        <button class="btn btn-ghost" onclick="startEdit(${a.id})">Edit</button>
+        <button class="btn btn-danger" onclick="deleteAgent(${a.id}, '${esc(a.full_name || 'this agent')}')">Remove</button>
+      </div>
+    </td>
+  </tr>`;
+}
+
+function addRowHtml() {
+  return `<tr class="add-row" id="newAgentRow">
+    <td><input class="cell-input" id="n_full_name"         placeholder="Full name *" oninput="markDirty(this)"></td>
+    <td><input class="cell-input" id="n_short_name"        placeholder="e.g. Jose F" oninput="markDirty(this)"></td>
+    <td><input class="cell-input" id="n_bluerock_username" placeholder="e.g. joef"   oninput="markDirty(this)"></td>
+    <td><input class="cell-input" id="n_email"             placeholder="email@example.com" oninput="markDirty(this)"></td>
+    <td class="col-status">
+      <select class="cell-input" id="n_active">
+        <option value="1">Active</option>
+        <option value="0">Inactive</option>
+      </select>
+    </td>
+    <td class="col-actions">
+      <div class="actions">
+        <button class="btn btn-save"  onclick="submitAdd()">Add</button>
+        <button class="btn btn-ghost" onclick="hideAddRow()">Cancel</button>
+      </div>
+    </td>
+  </tr>`;
+}
+
+// ── CRUD Actions ────────────────────────────────────────────────
+function startEdit(id) {
+  editingId = id;
+  addRowVisible = false;
+  render();
+  document.getElementById('e_full_name')?.focus();
+}
+
+function cancelEdit() {
+  editingId = null;
+  render();
+}
+
+async function saveEdit(id) {
+  const body = {
+    full_name:         val('e_full_name'),
+    short_name:        val('e_short_name'),
+    bluerock_username: val('e_bluerock_username'),
+    email:             val('e_email'),
+    active:            parseInt(val('e_active')),
+  };
+  // Remove empty strings so we don't overwrite with blank
+  Object.keys(body).forEach(k => { if (body[k] === '') delete body[k]; });
+
+  const res = await fetch(`/api/roster/${id}`, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (data.success) {
+    agents = data.agents;
+    editingId = null;
+    render();
+    toast('Agent updated', 'ok');
+  } else {
+    toast('Save failed', 'err');
+  }
+}
+
+function showAddRow() {
+  addRowVisible = true;
+  editingId = null;
+  render();
+  document.getElementById('n_full_name')?.focus();
+}
+
+function hideAddRow() {
+  addRowVisible = false;
+  render();
+}
+
+async function submitAdd() {
+  const fullName = val('n_full_name');
+  if (!fullName) { toast('Full name is required', 'err'); return; }
+
+  const body = {
+    full_name:         fullName,
+    short_name:        val('n_short_name')        || null,
+    bluerock_username: val('n_bluerock_username') || null,
+    email:             val('n_email')             || null,
+    active:            parseInt(val('n_active') || '1'),
+  };
+
+  const res = await fetch('/api/roster', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (data.success) {
+    agents = data.agents;
+    addRowVisible = false;
+    render();
+    toast('Agent added', 'ok');
+  } else {
+    toast('Failed to add agent', 'err');
+  }
+}
+
+async function deleteAgent(id, name) {
+  if (!confirm(`Remove ${name} from the roster?`)) return;
+  const res = await fetch(`/api/roster/${id}`, { method: 'DELETE' });
+  const data = await res.json();
+  if (data.success) {
+    agents = data.agents;
+    if (editingId === id) editingId = null;
+    render();
+    toast(`${name} removed`, 'ok');
+  } else {
+    toast('Delete failed', 'err');
+  }
+}
+
+// ── Helpers ─────────────────────────────────────────────────────
+function val(id) {
+  return (document.getElementById(id)?.value || '').trim();
+}
+
+function markDirty(el) {
+  el.classList.add('dirty');
+}
+
+function esc(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+let toastTimer;
+function toast(msg, type = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `show ${type}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = ''; }, 2800);
+}
+
+// Enter key support in add row
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && addRowVisible) submitAdd();
+  if (e.key === 'Enter' && editingId)    saveEdit(editingId);
+  if (e.key === 'Escape') { cancelEdit(); hideAddRow(); }
+});
+
+load();
+</script>
+</body>
+</html>

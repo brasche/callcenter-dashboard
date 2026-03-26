@@ -1,0 +1,28 @@
+# Secrets & credentials — NEVER commit these
+.env
+credentials.json
+*-service-account.json
+*-sa-key.json
+
+# Database files
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp

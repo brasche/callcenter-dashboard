@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DB Viewer — Call Center</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --surface2: #22263a;
+    --border: #2e3250; --accent: #4f8ef7; --text: #e8eaf0;
+    --muted: #7b82a0; --radius: 8px;
+  }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 13px; min-height: 100vh; }
+  nav { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 24px; display: flex; align-items: center; height: 54px; gap: 4px; }
+  nav .logo { font-weight: 700; font-size: 16px; color: var(--accent); margin-right: 24px; }
+  nav a { color: var(--muted); text-decoration: none; padding: 6px 14px; border-radius: var(--radius); font-size: 13px; transition: color .15s, background .15s; }
+  nav a:hover { color: var(--text); background: var(--surface2); }
+  nav a.active { color: var(--text); background: var(--surface2); font-weight: 600; }
+  .page { max-width: 1400px; margin: 0 auto; padding: 28px 24px; }
+  h1 { font-size: 20px; margin-bottom: 20px; }
+  .layout { display: grid; grid-template-columns: 200px 1fr; gap: 20px; align-items: start; }
+  .table-list { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .table-list button { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 10px 14px; background: none; border: none; border-bottom: 1px solid var(--border); color: var(--text); cursor: pointer; font-size: 13px; transition: background .1s; }
+  .table-list button:last-child { border-bottom: none; }
+  .table-list button:hover { background: var(--surface2); }
+  .table-list button.active { background: var(--surface2); color: var(--accent); font-weight: 600; }
+  .count-badge { background: var(--surface2); border-radius: 10px; padding: 1px 7px; font-size: 11px; color: var(--muted); }
+  .main { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .toolbar { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+  .toolbar input { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 6px 10px; font-size: 13px; outline: none; width: 240px; }
+  .toolbar input:focus { border-color: var(--accent); }
+  .toolbar .info { margin-left: auto; color: var(--muted); font-size: 12px; }
+  .table-wrap { overflow-x: auto; max-height: calc(100vh - 260px); overflow-y: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  thead th { background: var(--surface2); padding: 9px 12px; text-align: left; font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--border); white-space: nowrap; position: sticky; top: 0; z-index: 1; }
+  tbody tr { border-bottom: 1px solid var(--border); }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: rgba(255,255,255,.03); }
+  tbody td { padding: 8px 12px; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .null { color: var(--muted); font-style: italic; }
+  .pagination { padding: 10px 16px; border-top: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }
+  .btn { padding: 5px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); cursor: pointer; font-size: 12px; }
+  .btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .empty { padding: 48px; text-align: center; color: var(--muted); }
+</style>
+</head>
+<body>
+<nav>
+  <span class="logo">📞 CC Dashboard</span>
+  <a href="/">Dashboard</a>
+  <a href="/agents.html">Agents</a>
+  <a href="/db-viewer.html" class="active">DB Viewer</a>
+</nav>
+<div class="page">
+  <h1>Database Viewer</h1>
+  <div class="layout">
+    <div class="table-list" id="tableList">Loading…</div>
+    <div class="main" id="main">
+      <div class="empty">Select a table on the left</div>
+    </div>
+  </div>
+</div>
+<script>
+let currentTable = null, offset = 0, total = 0;
+const limit = 100;
+let searchTimer;
+
+async function loadTables() {
+  const res = await fetch('/api/db/tables');
+  const data = await res.json();
+  const el = document.getElementById('tableList');
+  el.innerHTML = data.tables.map(t =>
+    `<button onclick="loadTable('${t}')" id="btn_${t}">
+       <span>${t}</span>
+       <span class="count-badge">${data.counts[t] ?? ''}</span>
+     </button>`
+  ).join('');
+}
+
+async function loadTable(name, newOffset = 0) {
+  currentTable = name;
+  offset = newOffset;
+  const search = document.getElementById('searchInput')?.value || '';
+  const url = `/api/db/table/${name}?limit=${limit}&offset=${offset}${search ? '&search=' + encodeURIComponent(search) : ''}`;
+  const res = await fetch(url);
+  const data = await res.json();
+  total = data.total;
+
+  document.querySelectorAll('.table-list button').forEach(b => b.classList.remove('active'));
+  document.getElementById('btn_' + name)?.classList.add('active');
+
+  const main = document.getElementById('main');
+  if (data.error) { main.innerHTML = `<div class="empty">${data.error}</div>`; return; }
+
+  const cols = data.columns;
+  const rows = data.rows;
+  const start = offset + 1, end = Math.min(offset + limit, total);
+
+  const isCalls = name === 'calls';
+  const idIdx = isCalls ? cols.indexOf('id') : -1;
+  const recHeader = isCalls ? '<th>Rec</th>' : '';
+
+  main.innerHTML = `
+    <div class="toolbar">
+      <input id="searchInput" placeholder="Search all columns…" value="${esc(search)}" oninput="onSearch()">
+      <span class="info">${total.toLocaleString()} rows${search ? ' (filtered)' : ''} · showing ${start}–${end}</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>${cols.map(c => `<th>${esc(c)}</th>`).join('')}${recHeader}</tr></thead>
+        <tbody>${rows.length ? rows.map(r => {
+          const cells = r.map(v => `<td title="${esc(String(v ?? ''))}">
+            ${v === null || v === '' ? '<span class="null">null</span>' : esc(String(v))}
+          </td>`).join('');
+          const recBtn = isCalls && idIdx >= 0
+            ? `<td><button onclick="dlRec('${esc(String(r[idIdx]))}')" title="Download recording" style="background:none;border:none;cursor:pointer;color:var(--accent);font-size:14px;padding:0">🎧</button></td>`
+            : '';
+          return `<tr>${cells}${recBtn}</tr>`;
+        }).join('') : `<tr><td colspan="${cols.length + (isCalls?1:0)}" class="empty">No rows</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+    <div class="pagination">
+      <button class="btn" onclick="loadTable('${name}', ${Math.max(0, offset - limit)})" ${offset === 0 ? 'disabled' : ''}>← Prev</button>
+      <span style="color:var(--muted);font-size:12px">Page ${Math.ceil((offset + 1) / limit)} of ${Math.ceil(total / limit) || 1}</span>
+      <button class="btn" onclick="loadTable('${name}', ${offset + limit})" ${end >= total ? 'disabled' : ''}>Next →</button>
+    </div>`;
+}
+
+function onSearch() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => currentTable && loadTable(currentTable, 0), 350);
+}
+
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+async function dlRec(callId) {
+  try {
+    const res = await fetch(`/api/recordings/${callId}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert('Recording not available:\n' + (err.detail || `HTTP ${res.status}`));
+      return;
+    }
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `recording_${callId.slice(0,8)}.mp3`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch(e) {
+    alert('Failed to download recording: ' + e.message);
+  }
+}
+
+loadTables();
+</script>
+</body>
+</html>

@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Call Center Dashboard</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:        #0f1117;
+  --surface:   #1a1d27;
+  --surface2:  #22263a;
+  --border:    #2e3250;
+  --accent:    #4f6ef7;
+  --text:      #e2e8f0;
+  --muted:     #7b82a0;
+  --green:     #22c55e;
+  --yellow:    #eab308;
+  --orange:    #f97316;
+  --red:       #ef4444;
+  --purple:    #a855f7;
+  --radius:    8px;
+}
+
+body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 13px; }
+
+nav { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 24px; display: flex; align-items: center; height: 52px; gap: 4px; }
+.logo { font-weight: 700; font-size: 15px; color: var(--accent); margin-right: 20px; }
+nav a { color: var(--muted); text-decoration: none; padding: 6px 13px; border-radius: var(--radius); font-size: 13px; }
+nav a:hover { color: var(--text); background: var(--surface2); }
+nav a.active { color: var(--text); background: var(--surface2); font-weight: 600; }
+.nav-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.sync-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; }
+.sync-dot.stale { background: var(--yellow); }
+#sync-time { color: var(--muted); font-size: 11px; }
+
+.page { padding: 20px 24px; max-width: 1900px; margin: 0 auto; }
+
+/* Date bar */
+.date-bar {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 8px 14px; margin-bottom: 16px;
+}
+.date-bar label { color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+.date-bar input[type=date] {
+  background: var(--surface2); border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text); padding: 5px 10px; font-size: 12px; cursor: pointer; color-scheme: dark;
+}
+.date-bar button {
+  background: var(--accent); border: none; border-radius: 6px;
+  color: #fff; padding: 5px 14px; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.date-bar button:hover { opacity: .85; }
+#todayBtn { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; color: var(--muted); padding: 5px 12px; font-size: 12px; cursor: pointer; }
+#todayBtn:hover { color: var(--text); }
+#dateRangeLabel { color: var(--muted); font-size: 11px; margin-left: 6px; }
+
+/* KPI strip */
+.kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
+.kpi-label { color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
+.kpi-val { font-size: 24px; font-weight: 800; line-height: 1; }
+
+/* Card */
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.card-header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.card-title { font-weight: 700; font-size: 14px; }
+.legend { display: flex; gap: 12px; font-size: 11px; color: var(--muted); }
+.legend-item { display: flex; align-items: center; gap: 5px; }
+.legend-dot { width: 10px; height: 10px; border-radius: 2px; }
+
+/* Table */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+thead th {
+  background: var(--surface2); padding: 9px 12px; text-align: left;
+  font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--muted); border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+thead th.right { text-align: right; }
+tbody tr {
+  border-bottom: 1px solid var(--border); cursor: pointer;
+  transition: background .1s; border-left: 3px solid transparent;
+}
+tbody tr:last-child { border-bottom: none; }
+tbody tr:hover { background: rgba(255,255,255,.04); }
+tbody td { padding: 9px 12px; white-space: nowrap; }
+tbody td.right { text-align: right; }
+
+/* Pill */
+.pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; }
+.pill-green  { background: rgba(34,197,94,.15);   color: var(--green); }
+.pill-yellow { background: rgba(234,179,8,.15);   color: var(--yellow); }
+.pill-orange { background: rgba(249,115,22,.15);  color: var(--orange); }
+.pill-red    { background: rgba(239,68,68,.15);   color: var(--red); }
+.pill-purple { background: rgba(168,85,247,.15);  color: var(--purple); }
+.pill-muted  { background: rgba(123,130,160,.12); color: var(--muted); }
+
+tr.team-row td { font-weight: 700; border-top: 2px solid var(--border); background: var(--surface2); }
+
+/* Count+pct cell */
+.cp-cell { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
+.cp-label { font-size: 12px; white-space: nowrap; }
+.pct-bar { width: 44px; height: 5px; background: rgba(255,255,255,.08); border-radius: 3px; overflow: hidden; }
+.pct-fill { height: 100%; border-radius: 3px; }
+.fill-2  { background: var(--green); }
+.fill-5  { background: var(--yellow); }
+.fill-10 { background: var(--orange); }
+.fill-20 { background: var(--red); }
+
+/* Modal */
+.modal-bg {
+  position: fixed; inset: 0; background: rgba(0,0,0,.65); z-index: 100;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 40px 16px; overflow-y: auto;
+  opacity: 0; pointer-events: none; transition: opacity .2s;
+}
+.modal-bg.open { opacity: 1; pointer-events: all; }
+.modal {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  width: 100%; max-width: 960px; overflow: hidden;
+  transform: translateY(-12px); transition: transform .2s;
+}
+.modal-bg.open .modal { transform: translateY(0); }
+.modal-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+.modal-header h2 { font-size: 17px; font-weight: 700; }
+.modal-close { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; color: var(--muted); cursor: pointer; padding: 4px 10px; font-size: 16px; }
+.modal-close:hover { color: var(--text); }
+.modal-body { padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+.modal-section-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin-bottom: 10px; }
+
+.fmono { font-family: 'Consolas', monospace; }
+.dim   { color: var(--muted); }
+</style>
+</head>
+<body>
+
+<nav>
+  <span class="logo">📞 CC Dashboard</span>
+  <a href="/" class="active">Dashboard</a>
+  <a href="/agents.html">Agents</a>
+  <a href="/db-viewer.html">DB Viewer</a>
+  <div class="nav-right">
+    <span class="sync-dot" id="syncDot"></span>
+    <span id="sync-time">Loading…</span>
+  </div>
+</nav>
+
+<div class="page">
+
+  <div class="date-bar">
+    <label>Date Range</label>
+    <input type="date" id="startDate">
+    <span class="dim">→</span>
+    <input type="date" id="endDate">
+    <button onclick="applyDateRange()">Apply</button>
+    <button id="todayBtn" onclick="resetToToday()">Today</button>
+    <span id="dateRangeLabel"></span>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi"><div class="kpi-label">Total Calls</div><div class="kpi-val" id="kTotalCalls">—</div></div>
+    <div class="kpi"><div class="kpi-label">Avg Talk</div><div class="kpi-val" id="kAvgTalk">—</div></div>
+    <div class="kpi"><div class="kpi-label">&gt;2 min %</div><div class="kpi-val" id="kPct2">—</div></div>
+    <div class="kpi"><div class="kpi-label">&gt;5 min %</div><div class="kpi-val" id="kPct5">—</div></div>
+    <div class="kpi"><div class="kpi-label">&gt;10 min %</div><div class="kpi-val" id="kPct10">—</div></div>
+    <div class="kpi"><div class="kpi-label">&gt;20 min %</div><div class="kpi-val" id="kPct20">—</div></div>
+    <div class="kpi"><div class="kpi-label">20min Close %</div><div class="kpi-val" id="kClose">—</div></div>
+    <div class="kpi"><div class="kpi-label">Deals Today</div><div class="kpi-val" id="kDeals">—</div></div>
+    <div class="kpi"><div class="kpi-label">Avg Debt</div><div class="kpi-val" id="kAvgDebt">—</div></div>
+    <div class="kpi"><div class="kpi-label">Avg 1st Pay</div><div class="kpi-val" id="kAvgPay">—</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title" id="tableTitle">Agent Performance — Today</span>
+      <div class="legend">
+        <span class="dim" style="font-size:11px">Bar = percentile rank among team</span>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Agent</th>
+            <th class="right">IB Calls</th>
+            <th class="right">Avg Talk</th>
+            <th class="right">Active Hrs</th>
+            <th class="right">Calls/Hr</th>
+            <th class="right">Avg Between</th>
+            <th class="right">&gt;2m</th>
+            <th class="right">&gt;5m</th>
+            <th class="right">&gt;10m</th>
+            <th class="right">&gt;20m</th>
+            <th class="right">Close%</th>
+            <th class="right">Deals</th>
+            <th class="right">CPS</th>
+            <th class="right">Avg Debt</th>
+            <th class="right">Avg 1st Pay</th>
+          </tr>
+        </thead>
+        <tbody id="agentBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal-bg" id="modalBg" onclick="closeModal(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modalTitle">Agent Detail</h2>
+      <button class="modal-close" onclick="closeModalDirect()">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody">Loading…</div>
+  </div>
+</div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────
+let agents = [];
+let teamStats = {};
+let currentStart = null;
+let currentEnd   = null;
+
+// ── Date range ─────────────────────────────────────────────────────────────
+function todayISO() { return new Date().toISOString().slice(0, 10); }
+
+function applyDateRange() {
+  currentStart = document.getElementById('startDate').value || null;
+  currentEnd   = document.getElementById('endDate').value   || null;
+  updateDateLabel();
+  fetchAll();
+}
+function resetToToday() {
+  const t = todayISO();
+  document.getElementById('startDate').value = t;
+  document.getElementById('endDate').value   = t;
+  currentStart = null; currentEnd = null;
+  updateDateLabel(); fetchAll();
+}
+function updateDateLabel() {
+  const lbl = document.getElementById('dateRangeLabel');
+  const title = document.getElementById('tableTitle');
+  if (!currentStart && !currentEnd) {
+    lbl.textContent = ''; title.textContent = 'Agent Performance — Today';
+  } else {
+    const s = currentStart || todayISO(), e = currentEnd || todayISO();
+    const r = s === e ? s : `${s} → ${e}`;
+    lbl.textContent = `Showing: ${r}`; title.textContent = `Agent Performance — ${r}`;
+  }
+}
+function buildAPIParams() {
+  const p = new URLSearchParams();
+  if (currentStart) p.set('start', currentStart);
+  if (currentEnd)   p.set('end',   currentEnd);
+  return p.toString() ? '?' + p.toString() : '';
+}
+
+// ── Fetch ──────────────────────────────────────────────────────────────────
+async function fetchAll() {
+  try {
+    const qs = buildAPIParams();
+    const [agRes, teamRes] = await Promise.all([
+      fetch('/api/agents' + qs).then(r => r.json()),
+      fetch('/api/team'   + qs).then(r => r.json()),
+    ]);
+    agents    = agRes.agents || [];
+    teamStats = teamRes      || {};
+    renderKPIs();
+    renderTable();
+    updateSyncTime(true);
+  } catch(e) {
+    updateSyncTime(false);
+  }
+}
+
+// ── KPIs ───────────────────────────────────────────────────────────────────
+function renderKPIs() {
+  const t = teamStats;
+  set('kTotalCalls', t.total_calls ?? '—');
+  set('kAvgTalk',    fmtDur(t.avg_talk_sec));
+  set('kPct2',       pct(t.pct_2min));
+  set('kPct5',       pct(t.pct_5min));
+  set('kPct10',      pct(t.pct_10min));
+  set('kPct20',      pct(t.pct_20min));
+  set('kClose',      pct(t.close_pct_20min));
+  set('kDeals',      t.total_deals ?? '—');
+  set('kAvgDebt',    dollar(t.avg_debt_enrolled));
+  set('kAvgPay',     dollar(t.avg_first_payment));
+}
+
+// ── Percentile helper ──────────────────────────────────────────────────────
+// Returns 0-100 percentile rank of `value` within `arr`
+function pctileRank(arr, value) {
+  if (!arr.length) return 0;
+  const below = arr.filter(v => v < value).length;
+  return Math.round((below / arr.length) * 100);
+}
+
+// ── Table ──────────────────────────────────────────────────────────────────
+function renderTable() {
+  // Pre-compute percentile arrays
+  const vals2  = agents.map(a => a.pct_2min  || 0);
+  const vals5  = agents.map(a => a.pct_5min  || 0);
+  const vals10 = agents.map(a => a.pct_10min || 0);
+  const vals20 = agents.map(a => a.pct_20min || 0);
+
+  let rows = agents.map((a, i) => {
+    // Active hours display
+    const activeHrsDisplay = fmtActiveHrs(a);
+
+    // Count/pct cells with percentile bar
+    const p2  = pctileRank(vals2,  a.pct_2min  || 0);
+    const p5  = pctileRank(vals5,  a.pct_5min  || 0);
+    const p10 = pctileRank(vals10, a.pct_10min || 0);
+    const p20 = pctileRank(vals20, a.pct_20min || 0);
+
+    return `<tr data-idx="${i}" onclick="openModal('${esc(a.agent_name)}')">
+      <td><div style="font-weight:600">${esc(a.full_name)}</div></td>
+      <td class="right">
+        <div>${a.total_calls}</div>
+        ${a.ob_calls ? `<div style="font-size:10px;color:var(--muted)">${a.ob_calls} OB</div>` : ''}
+      </td>
+      <td class="right">${fmtDur(a.avg_talk_sec)}</td>
+      <td class="right">${activeHrsDisplay}</td>
+      <td class="right">${a.calls_per_hour}</td>
+      <td class="right">${a.avg_between_calls_sec != null ? fmtDur(a.avg_between_calls_sec) : '<span class="dim">—</span>'}</td>
+      <td class="right"><div class="cp-cell">${cpBar(a.calls_2min,  a.pct_2min,  p2,  'fill-2')}</div></td>
+      <td class="right"><div class="cp-cell">${cpBar(a.calls_5min,  a.pct_5min,  p5,  'fill-5')}</div></td>
+      <td class="right"><div class="cp-cell">${cpBar(a.calls_10min, a.pct_10min, p10, 'fill-10')}</div></td>
+      <td class="right"><div class="cp-cell">${cpBar(a.calls_20min, a.pct_20min, p20, 'fill-20')}</div></td>
+      <td class="right">${a.close_pct_20min ? a.close_pct_20min + '%' : '<span class="dim">—</span>'}</td>
+      <td class="right">${a.total_deals || '<span class="dim">0</span>'}</td>
+      <td class="right">${(()=>{ const v = a.cps != null ? a.cps : (a.total_deals > 0 ? +(a.total_calls / a.total_deals).toFixed(1) : null); return v != null ? v : '<span class="dim">—</span>'; })()}</td>
+      <td class="right">${a.avg_debt_enrolled ? dollar(a.avg_debt_enrolled) : '<span class="dim">—</span>'}</td>
+      <td class="right">${a.avg_first_payment ? dollar(a.avg_first_payment) : '<span class="dim">—</span>'}</td>
+    </tr>`;
+  }).join('');
+
+  // Team row
+  const t = teamStats;
+  rows += `<tr class="team-row">
+    <td>Team Total</td>
+    <td class="right">${t.total_calls ?? '—'}</td>
+    <td class="right">${fmtDur(t.avg_talk_sec)}</td>
+    <td class="right">—</td>
+    <td class="right">—</td>
+    <td class="right">—</td>
+    <td class="right"><div class="cp-cell">${cpBarTeam(t.pct_2min,  'fill-2')}</div></td>
+    <td class="right"><div class="cp-cell">${cpBarTeam(t.pct_5min,  'fill-5')}</div></td>
+    <td class="right"><div class="cp-cell">${cpBarTeam(t.pct_10min, 'fill-10')}</div></td>
+    <td class="right"><div class="cp-cell">${cpBarTeam(t.pct_20min, 'fill-20')}</div></td>
+    <td class="right">${t.close_pct_20min ? t.close_pct_20min + '%' : '<span class="dim">—</span>'}</td>
+    <td class="right">${t.total_deals ?? '—'}</td>
+    <td class="right">${(()=>{ const v = t.cps != null ? t.cps : (t.total_deals > 0 ? +(t.total_calls / t.total_deals).toFixed(1) : null); return v != null ? v : '—'; })()}</td>
+    <td class="right">${dollar(t.avg_debt_enrolled)}</td>
+    <td class="right">${dollar(t.avg_first_payment)}</td>
+  </tr>`;
+
+  document.getElementById('agentBody').innerHTML = rows;
+}
+
+
+// ── Formatters ─────────────────────────────────────────────────────────────
+function fmtDur(sec) {
+  if (!sec && sec !== 0) return '—';
+  sec = Math.round(sec);
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
+function fmtTime(iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso.includes('T') ? iso : iso.replace(' ', 'T'));
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } catch { return iso; }
+}
+
+function timeAgo(iso) {
+  if (!iso) return '—';
+  try {
+    const diff = Math.floor((Date.now() - new Date(iso.replace(' ','T')).getTime()) / 60000);
+    return diff < 1 ? 'just now' : `${diff}m ago`;
+  } catch { return '—'; }
+}
+
+function fmtActiveHrs(a) {
+  if (a.active_time_sec && a.active_time_sec > 0) {
+    return `<span title="Pause-adjusted (log − pause time)">${(a.active_time_sec/3600).toFixed(2)}h</span>`;
+  }
+  if (a.active_hours && a.active_hours > 0) {
+    return `${a.active_hours}h`;
+  }
+  return '<span class="dim">—</span>';
+}
+
+// Count + pct label + percentile bar
+function cpBar(count, pctVal, percentile, fillCls) {
+  return `<span class="cp-label">${count ?? 0} / ${pctVal ?? 0}%</span><div class="pct-bar"><div class="pct-fill ${fillCls}" style="width:${percentile}%"></div></div>`;
+}
+// Team row: no percentile, just pct
+function cpBarTeam(pctVal, fillCls) {
+  return `<span class="cp-label">${pctVal ?? 0}%</span><div class="pct-bar"><div class="pct-fill ${fillCls}" style="width:${Math.min(100,pctVal||0)}%"></div></div>`;
+}
+
+function pct(v)    { return v != null ? v + '%' : '—'; }
+function dollar(v) { return v ? '$' + Number(v).toLocaleString('en-US', {maximumFractionDigits:0}) : '—'; }
+function esc(s)    { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function set(id, v){ const el = document.getElementById(id); if (el) el.textContent = v; }
+
+function statusPill(s) {
+  if (!s) return '<span class="dim">—</span>';
+  const m = {'Enrolled':'pill-green','Retention':'pill-yellow','Returned':'pill-orange'};
+  return `<span class="pill ${m[s]||'pill-muted'}">${esc(s)}</span>`;
+}
+
+// ── Modal ──────────────────────────────────────────────────────────────────
+async function openModal(agentName) {
+  const bg = document.getElementById('modalBg');
+  const body = document.getElementById('modalBody');
+  document.getElementById('modalTitle').textContent =
+    (agents.find(a => a.agent_name === agentName)?.full_name || agentName) + ' — Detail';
+  body.innerHTML = '<div style="padding:32px;text-align:center;color:var(--muted)">Loading…</div>';
+  bg.classList.add('open');
+  try {
+    const d = await fetch(`/api/agents/${encodeURIComponent(agentName)}`).then(r => r.json());
+    const ag = agents.find(a => a.agent_name === agentName);
+    body.innerHTML = buildModal(d, ag);
+  } catch(e) {
+    body.innerHTML = '<div style="padding:24px;color:var(--red)">Failed to load.</div>';
+  }
+}
+
+function buildModal(d, ag) {
+  const atSec = d.active_time_sec || ag?.active_time_sec || 0;
+  const logSec = d.log_time_sec || ag?.log_time_sec || 0;
+  const pauseSec = d.pause_time_sec || ag?.pause_time_sec || 0;
+  const activeHrsStr = atSec > 0
+    ? (atSec/3600).toFixed(2) + 'h <span class="dim" style="font-size:11px">(pause-adj.)</span>'
+    : logSec > 0 ? (logSec/3600).toFixed(2) + 'h' : '—';
+
+  // Agent mapping debug info
+  const info = d.agent_info || {};
+  const mappingStr = info.short_name
+    ? `${info.short_name}${info.full_name ? ' / ' + info.full_name : ''} → ${info.bluerock_username || '?'}`
+    : `<span style="color:var(--yellow)">BlueRock user: <strong>${esc(d.agent_name || '')}</strong> — not matched in roster (deals won't attribute)</span>`;
+
+  let html = `<div>
+    <div class="modal-section-title">Overview</div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <div class="kpi" style="flex:1;min-width:110px"><div class="kpi-label">Active Time</div><div class="kpi-val" style="font-size:18px">${activeHrsStr}</div></div>
+      <div class="kpi" style="flex:1;min-width:110px"><div class="kpi-label">Pause Time</div><div class="kpi-val" style="font-size:18px">${pauseSec > 0 ? fmtDur(pauseSec) : '—'}</div></div>
+      ${(()=>{ const v = ag?.cps != null ? ag.cps : (ag?.total_deals > 0 ? +(ag.total_calls / ag.total_deals).toFixed(1) : null); return v != null ? `<div class="kpi" style="flex:1;min-width:110px"><div class="kpi-label">CPS (Calls/Sale)</div><div class="kpi-val" style="font-size:18px">${v}</div></div>` : ''; })()}
+      ${ag?.avg_between_calls_sec != null ? `<div class="kpi" style="flex:1;min-width:110px"><div class="kpi-label">Avg Between Calls</div><div class="kpi-val" style="font-size:18px">${fmtDur(ag.avg_between_calls_sec)}</div></div>` : ''}
+    </div>
+    <div style="margin-top:8px;font-size:11px;color:var(--muted)">Name mapping: ${mappingStr}</div>
+    </div>`;
+
+  if (d.queues?.length) {
+    html += `<div><div class="modal-section-title">By Queue</div>
+      <table style="width:100%"><thead><tr>
+        <th>Queue</th><th class="right">Calls</th><th class="right">Avg Talk</th>
+        <th class="right">&gt;2m%</th><th class="right">&gt;5m%</th><th class="right">&gt;10m%</th><th class="right">&gt;20m%</th>
+      </tr></thead><tbody>
+      ${d.queues.map(q => `<tr>
+        <td>${esc(q.queue||'—')}</td>
+        <td class="right">${q.total_calls}</td>
+        <td class="right">${fmtDur(q.avg_talk_sec)}</td>
+        <td class="right">${pct(q.pct_2min)}</td><td class="right">${pct(q.pct_5min)}</td>
+        <td class="right">${pct(q.pct_10min)}</td><td class="right">${pct(q.pct_20min)}</td>
+      </tr>`).join('')}
+      </tbody></table></div>`;
+  }
+
+  // BlueRock raw stats — always show section; use cache if available, activity fallback otherwise
+  {
+    const skipKeys = new Set(['agent']);
+    const statsObj = (d.br_stats && Object.keys(d.br_stats).length) ? d.br_stats : null;
+    if (statsObj) {
+      const statRows = Object.entries(statsObj)
+        .filter(([k]) => !skipKeys.has(k))
+        .map(([k, v]) => {
+          const label = k.replace(/_/g, ' ');
+          const isTime = k.endsWith('_time') || k === 'wrapup_time' || k === 'idle_time';
+          const display = isTime && v != null ? fmtDur(Number(v)) : (v ?? '—');
+          return `<tr><td style="color:var(--muted);font-size:11px">${esc(label)}</td><td class="right fmono" style="font-size:12px">${esc(String(display))}</td></tr>`;
+        }).join('');
+      html += `<div><div class="modal-section-title">BlueRock Stats (raw)</div>
+        <table style="width:100%"><tbody>${statRows}</tbody></table></div>`;
+    } else {
+      // Cache miss — show what we have from the activity tracker
+      const logSec2  = d.log_time_sec   || 0;
+      const pauseSec2 = d.pause_time_sec || 0;
+      const actSec2  = d.active_time_sec || 0;
+      html += `<div><div class="modal-section-title">BlueRock Stats</div>
+        <table style="width:100%"><tbody>
+          <tr><td style="color:var(--muted);font-size:11px">log time</td><td class="right fmono" style="font-size:12px">${logSec2 ? fmtDur(logSec2) : '<span style="color:var(--muted)">not yet synced</span>'}</td></tr>
+          <tr><td style="color:var(--muted);font-size:11px">pause time</td><td class="right fmono" style="font-size:12px">${pauseSec2 ? fmtDur(pauseSec2) : '—'}</td></tr>
+          <tr><td style="color:var(--muted);font-size:11px">active time (log − pause)</td><td class="right fmono" style="font-size:12px">${actSec2 ? fmtDur(actSec2) : '—'}</td></tr>
+        </tbody></table>
+        <div style="font-size:10px;color:var(--muted);padding:4px 0">Full stats available after first BlueRock sync (every 30s)</div>
+      </div>`;
+    }
+  }
+
+  if (d.deals?.length) {
+    html += `<div><div class="modal-section-title">Deals Today (${d.deals.length})</div>
+      <table style="width:100%"><thead><tr>
+        <th>Client</th><th>Client ID</th><th>Status</th><th class="right">Debt Enrolled</th><th class="right">1st Payment</th><th>Time</th>
+      </tr></thead><tbody>
+      ${d.deals.map(deal => `<tr>
+        <td>${esc(deal.client_name||'—')}</td>
+        <td class="fmono dim" style="font-size:11px">${esc(deal.client_id||'—')}</td>
+        <td>${statusPill(deal.enrollment_status)}</td>
+        <td class="right">${dollar(deal.deal_value)}</td>
+        <td class="right">${dollar(deal.first_payment_amount)}</td>
+        <td class="dim">${fmtTime(deal.submitted_at)}</td>
+      </tr>`).join('')}
+      </tbody></table></div>`;
+  }
+
+  // ── Agent State Timeline ──────────────────────────────────────────────────
+  {
+    const blocks  = d.state_blocks  || [];
+    const ds      = d.daily_stats   || {};
+
+    // State → display config
+    const STATE_CFG = {
+      in_call:    { label: 'On Call',     color: '#4f8ef7', bg: 'rgba(79,142,247,.15)' },
+      available:  { label: 'Available',   color: '#22c55e', bg: 'rgba(34,197,94,.15)'  },
+      paused:     { label: 'Paused',      color: '#f97316', bg: 'rgba(249,115,22,.15)' },
+      wrapup:     { label: 'Wrap-up',     color: '#eab308', bg: 'rgba(234,179,8,.15)'  },
+      logged_off: { label: 'Logged Off',  color: '#7b82a0', bg: 'rgba(123,130,160,.1)' },
+      unknown:    { label: 'Unknown',     color: '#7b82a0', bg: 'rgba(123,130,160,.1)' },
+    };
+    const cfg = s => STATE_CFG[s] || STATE_CFG.unknown;
+
+    const tsMs = ts => ts ? new Date(ts.includes('T') ? ts : ts.replace(' ','T')).getTime() : null;
+    const fmtTs = ts => {
+      if (!ts) return '—';
+      const d2 = new Date(ts.includes('T') ? ts : ts.replace(' ','T'));
+      return d2.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    };
+
+    // ── Daily summary card ────────────────────────────────────────────────
+    // Prefer agent_daily_stats (from /agents/stats), fall back to summing blocks
+    const hasDailyStats = Object.keys(ds).length > 0;
+    const blockTotals = {};
+    blocks.forEach(b => {
+      blockTotals[b.state] = (blockTotals[b.state] || 0) + (b.duration_seconds || 0);
+    });
+    const logT   = ds.log_time    || (blockTotals.in_call || 0) + (blockTotals.available || 0) + (blockTotals.wrapup || 0);
+    const pauseT = ds.pause_time  || blockTotals.paused    || 0;
+    const talkT  = blockTotals.in_call   || 0;
+    const wrapT  = ds.wrapup_time || blockTotals.wrapup    || 0;
+
+    html += `<div><div class="modal-section-title">Agent Day Summary${hasDailyStats ? ' <span style="font-size:10px;color:var(--muted)">(from BlueRock /agents/stats)</span>' : ' <span style="font-size:10px;color:var(--muted)">(from reconstructed blocks)</span>'}</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <div class="kpi" style="flex:1;min-width:90px"><div class="kpi-label">Logged In</div><div class="kpi-val" style="font-size:16px">${logT ? fmtDur(logT) : '—'}</div></div>
+        <div class="kpi" style="flex:1;min-width:90px"><div class="kpi-label">On Call</div><div class="kpi-val" style="color:var(--accent);font-size:16px">${talkT ? fmtDur(talkT) : '—'}</div></div>
+        <div class="kpi" style="flex:1;min-width:90px"><div class="kpi-label">Paused</div><div class="kpi-val" style="color:var(--orange);font-size:16px">${pauseT ? fmtDur(pauseT) : '—'}</div></div>
+        <div class="kpi" style="flex:1;min-width:90px"><div class="kpi-label">Wrap-up</div><div class="kpi-val" style="color:var(--yellow);font-size:16px">${wrapT ? fmtDur(wrapT) : '—'}</div></div>
+      </div></div>`;
+
+    // ── Horizontal state bar ──────────────────────────────────────────────
+    if (blocks.length) {
+      const firstMs = tsMs(blocks[0].started_at);
+      const lastMs  = tsMs(blocks[blocks.length - 1].ended_at || new Date().toISOString());
+      const spanMs  = Math.max(lastMs - firstMs, 1);
+
+      const segments = blocks.map(b => {
+        const bStart = tsMs(b.started_at) || firstMs;
+        const bEnd   = tsMs(b.ended_at)   || Date.now();
+        const left   = ((bStart - firstMs) / spanMs * 100).toFixed(2);
+        const width  = Math.max(((bEnd - bStart) / spanMs * 100), 0.3).toFixed(2);
+        const c      = cfg(b.state);
+        const tip    = `${c.label}: ${fmtTs(b.started_at)} – ${b.ended_at ? fmtTs(b.ended_at) : 'now'} (${fmtDur(b.duration_seconds||0)})`;
+        return `<div title="${esc(tip)}" style="position:absolute;left:${left}%;width:${width}%;height:100%;background:${c.color};opacity:.85"></div>`;
+      }).join('');
+
+      html += `<div><div class="modal-section-title">State Timeline</div>
+        <div style="position:relative;height:28px;background:var(--surface2);border-radius:4px;overflow:hidden;margin-bottom:4px">${segments}</div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--muted)">
+          ${Object.entries(STATE_CFG).filter(([,c])=>c.label!=='Unknown').map(([s,c])=>`<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${c.color};margin-right:3px;vertical-align:middle"></span>${c.label}</span>`).join('')}
+        </div></div>`;
+
+      // ── State blocks table ──────────────────────────────────────────────
+      const blockRows = blocks.map(b => {
+        const c = cfg(b.state);
+        return `<tr>
+          <td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c.color};margin-right:5px"></span>${c.label}</td>
+          <td class="fmono" style="font-size:11px">${fmtTs(b.started_at)}</td>
+          <td class="fmono" style="font-size:11px">${b.ended_at ? fmtTs(b.ended_at) : '<span style="color:var(--green)">now</span>'}</td>
+          <td class="right"><span class="pill" style="background:${c.bg};color:${c.color}">${fmtDur(b.duration_seconds||0)}</span></td>
+        </tr>`;
+      }).join('');
+
+      html += `<div><div class="modal-section-title">State Blocks (${blocks.length})</div>
+        <table style="width:100%"><thead><tr>
+          <th>State</th><th>Started</th><th>Ended</th><th class="right">Duration</th>
+        </tr></thead><tbody>${blockRows}</tbody></table></div>`;
+    } else {
+      html += `<div><div class="modal-section-title">State Timeline</div>
+        <div style="padding:20px 0;color:var(--muted);font-size:12px">
+          No timeline data yet for this date — polling started, data accumulates every 30 s.
+        </div></div>`;
+    }
+  }
+
+  // ── Call Records ──────────────────────────────────────────────────────────
+  const tlCalls = d.timeline || d.recent_calls || [];
+  {
+    const tlLabel    = ts => (ts||'').slice(11,16);
+    const tlGapLabel = sec => sec < 60 ? `${sec}s gap` : sec < 3600 ? `${Math.floor(sec/60)}m gap` : `${(sec/3600).toFixed(1)}h gap`;
+    const BIZ_START = 7 * 60;
+    const BIZ_END   = 16 * 60;
+    const tlTimeToMin = ts => { const p = (ts||'').slice(11,16).split(':'); return parseInt(p[0]||0)*60+parseInt(p[1]||0); };
+
+    let rows = '';
+    rows += `<tr><td colspan="7" style="padding:4px 8px;font-size:10px;color:var(--muted);background:rgba(255,255,255,.03)">▸ Business hours start — 7:00 AM</td></tr>`;
+
+    let prevEndMs = null;
+    tlCalls.forEach(c => {
+      const dur    = c.duration_sec || 0;
+      const callMs = c.started_at ? new Date(c.started_at.replace(' ','T')).getTime() : null;
+      const endMs  = callMs ? callMs + dur * 1000 : null;
+
+      if (prevEndMs && callMs) {
+        const gapSec = Math.round((callMs - prevEndMs) / 1000);
+        if (gapSec >= 60) {
+          const big = gapSec >= 1800;
+          rows += `<tr><td colspan="7" style="padding:2px 12px;font-size:10px;color:${big?'var(--yellow)':'var(--muted)'};opacity:.7">${big?'⏸ ':''}${tlGapLabel(gapSec)}${big?' — possible break/pause':''}</td></tr>`;
+        }
+      }
+
+      const inBiz  = tlTimeToMin(c.started_at) >= BIZ_START && tlTimeToMin(c.started_at) < BIZ_END;
+      const dir    = c.direction === 'outbound'
+        ? '<span class="pill pill-muted" style="font-size:10px">OB</span>'
+        : '<span class="pill pill-green" style="font-size:10px">IB</span>';
+      const durCls = dur>=1200?'pill-purple':dur>=600?'pill-red':dur>=300?'pill-orange':dur>=120?'pill-yellow':'pill-muted';
+      rows += `<tr style="${inBiz?'':'opacity:.5'}">
+        <td class="fmono" style="font-size:11px;color:var(--muted)">${tlLabel(c.started_at)}</td>
+        <td>${dir}</td>
+        <td>${esc(c.queue||'—')}</td>
+        <td class="fmono dim" style="font-size:11px">${esc(c.phone_number||'—')}</td>
+        <td class="right"><span class="pill ${durCls}">${fmtDur(dur)}</span></td>
+        <td class="dim" style="font-size:11px">${esc(c.exit_reason||'—')}</td>
+        <td>${c.id ? `<button onclick="dlRec('${esc(c.id)}')" title="Download recording" style="background:none;border:none;cursor:pointer;color:var(--accent);font-size:14px;padding:0">🎧</button>` : ''}</td>
+      </tr>`;
+      prevEndMs = endMs;
+    });
+
+    rows += `<tr><td colspan="7" style="padding:4px 8px;font-size:10px;color:var(--muted);background:rgba(255,255,255,.03)">◾ Business hours end — 4:00 PM</td></tr>`;
+
+    const tlTitle = tlCalls.length
+      ? `Call Records — ${tlCalls.length} calls · business hrs 7 AM–4 PM`
+      : `Call Records — none today`;
+    html += `<div><div class="modal-section-title">${tlTitle}</div>
+      <table style="width:100%"><thead><tr>
+        <th>Time</th><th>Type</th><th>Queue</th><th>Client ID</th><th class="right">Duration</th><th>Exit</th><th></th>
+      </tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+
+  // ── BlueRock Activity (live endpoint data) ────────────────────────────────
+  if (d.br_activity && Object.keys(d.br_activity).length) {
+    const actRows = Object.entries(d.br_activity).map(([endpoint, payload]) => {
+      const payloadStr = JSON.stringify(payload, null, 2);
+      return `<div style="margin-bottom:12px">
+        <div style="font-size:11px;color:var(--accent);margin-bottom:4px">${esc(endpoint)}</div>
+        <pre style="font-size:10px;color:var(--text);background:var(--surface2);padding:8px;border-radius:6px;overflow-x:auto;white-space:pre-wrap">${esc(payloadStr)}</pre>
+      </div>`;
+    }).join('');
+    html += `<div><div class="modal-section-title">BlueRock Activity Data</div>${actRows}</div>`;
+  }
+
+  return html;
+}
+
+async function dlRec(callId) {
+  try {
+    const res = await fetch(`/api/recordings/${callId}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert('Recording not available:\n' + (err.detail || `HTTP ${res.status}`));
+      return;
+    }
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `recording_${callId.slice(0,8)}.mp3`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch(e) {
+    alert('Failed to download recording: ' + e.message);
+  }
+}
+
+function closeModal(e) { if (e.target === document.getElementById('modalBg')) closeModalDirect(); }
+function closeModalDirect() { document.getElementById('modalBg').classList.remove('open'); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModalDirect(); });
+
+// ── Sync indicator ─────────────────────────────────────────────────────────
+function updateSyncTime(ok) {
+  document.getElementById('syncDot').className = 'sync-dot' + (ok ? '' : ' stale');
+  document.getElementById('sync-time').textContent = 'Updated ' + new Date().toLocaleTimeString();
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+async function init() {
+  const t = todayISO();
+  document.getElementById('startDate').value = t;
+  document.getElementById('endDate').value   = t;
+  await fetchAll();
+  setInterval(fetchAll, 5000);
+}
+
+init();
+</script>
+</body>
+</html>
