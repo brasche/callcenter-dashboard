@@ -10,9 +10,21 @@ async def _get_pool() -> asyncpg.Pool:
     global _pool
     if _pool is None:
         url = DATABASE_URL
+        if not url:
+            raise RuntimeError(
+                "DATABASE_URL is not set. "
+                "On Railway: add a PostgreSQL plugin to your project — it injects DATABASE_URL automatically. "
+                "Locally: add DATABASE_URL=postgresql://... to your .env file."
+            )
         # Railway injects postgres:// — asyncpg needs postgresql://
         if url.startswith("postgres://"):
             url = url.replace("postgres://", "postgresql://", 1)
+        if "localhost" in url or "127.0.0.1" in url:
+            raise RuntimeError(
+                f"DATABASE_URL points to localhost ({url}). "
+                "On Railway this won't work — delete the DATABASE_URL variable and let the "
+                "PostgreSQL plugin inject the real one automatically."
+            )
         _pool = await asyncpg.create_pool(url, min_size=1, max_size=10)
     return _pool
 
