@@ -630,8 +630,8 @@ async def download_recording(call_id: str):
     if recording_url and recording_url.startswith("http"):
         return await _stream(recording_url, f"recording_{call_id[:8]}.mp3")
 
-    uniqueid = (raw.get("uniqueid") or raw.get("callid") or raw.get("id")
-                or raw.get("uid") or raw.get("call_id") or raw.get("linkedid"))
+    uniqueid = (raw.get("unique") or raw.get("uniqueid") or raw.get("callid")
+                or raw.get("id") or raw.get("uid") or raw.get("call_id") or raw.get("linkedid"))
     if not uniqueid:
         raise HTTPException(
             status_code=404,

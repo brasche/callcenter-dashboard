@@ -587,25 +587,10 @@ function buildModal(d, ag) {
           ${Object.entries(STATE_CFG).filter(([,c])=>c.label!=='Unknown').map(([s,c])=>`<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${c.color};margin-right:3px;vertical-align:middle"></span>${c.label}</span>`).join('')}
         </div></div>`;
 
-      // ── State blocks table ──────────────────────────────────────────────
-      const blockRows = blocks.map(b => {
-        const c = cfg(b.state);
-        return `<tr>
-          <td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c.color};margin-right:5px"></span>${c.label}</td>
-          <td class="fmono" style="font-size:11px">${fmtTs(b.started_at)}</td>
-          <td class="fmono" style="font-size:11px">${b.ended_at ? fmtTs(b.ended_at) : '<span style="color:var(--green)">now</span>'}</td>
-          <td class="right"><span class="pill" style="background:${c.bg};color:${c.color}">${fmtDur(b.duration_seconds||0)}</span></td>
-        </tr>`;
-      }).join('');
-
-      html += `<div><div class="modal-section-title">State Blocks (${blocks.length})</div>
-        <table style="width:100%"><thead><tr>
-          <th>State</th><th>Started</th><th>Ended</th><th class="right">Duration</th>
-        </tr></thead><tbody>${blockRows}</tbody></table></div>`;
     } else {
       html += `<div><div class="modal-section-title">State Timeline</div>
         <div style="padding:20px 0;color:var(--muted);font-size:12px">
-          No timeline data yet for this date — polling started, data accumulates every 30 s.
+          No timeline data yet for this date. Data accumulates every 30 seconds.
         </div></div>`;
     }
   }
