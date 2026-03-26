@@ -648,7 +648,7 @@ function buildModal(d, ag) {
         <td class="fmono dim" style="font-size:11px">${esc(c.phone_number||'—')}</td>
         <td class="right"><span class="pill ${durCls}">${fmtDur(dur)}</span></td>
         <td class="dim" style="font-size:11px">${esc(c.exit_reason||'—')}</td>
-        <td>${c.id ? `<button onclick="dlRec('${esc(c.id)}')" title="Download recording" style="background:none;border:none;cursor:pointer;color:var(--accent);font-size:11px;padding:0">REC</button>` : ''}</td>
+        <td>${c.id ? `<button onclick="dlRec('${esc(c.id)}')" title="Download recording" style="background:none;border:none;cursor:pointer;color:var(--accent);font-size:14px;padding:0">🎧</button>` : ''}</td>
       </tr>`;
       prevEndMs = endMs;
     });
