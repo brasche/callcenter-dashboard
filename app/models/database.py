@@ -75,6 +75,9 @@ _MIGRATIONS = [
         duration_seconds INTEGER
     )""",
     "CREATE INDEX IF NOT EXISTS idx_blocks_agent_date ON agent_state_blocks(agent_name, started_at)",
+    # Remove duplicate blocks first, then add unique constraint (safe to re-run — no-op when clean)
+    "DELETE FROM agent_state_blocks WHERE id NOT IN (SELECT MAX(id) FROM agent_state_blocks GROUP BY agent_name, started_at)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_blocks_agent_started_unique ON agent_state_blocks(agent_name, started_at)",
     """CREATE TABLE IF NOT EXISTS agent_daily_stats (
         id             SERIAL PRIMARY KEY,
         agent_name     TEXT NOT NULL,

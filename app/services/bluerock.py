@@ -309,13 +309,15 @@ async def _stitch_blocks(db, agents_snapshot: dict, polled_at: str) -> None:
             )
 
             if last and last["state"] == status and last["ended_at"] is None:
+                # Same state, block still open — update duration only, keep ended_at NULL
                 block_start_dt = datetime.fromisoformat(last["started_at"])
                 dur = max(int((now_dt - block_start_dt).total_seconds()), 0)
                 await db.execute(
-                    "UPDATE agent_state_blocks SET ended_at = $1, duration_seconds = $2 WHERE id = $3",
-                    polled_at, dur, last["id"],
+                    "UPDATE agent_state_blocks SET duration_seconds = $1 WHERE id = $2",
+                    dur, last["id"],
                 )
             else:
+                # State changed — close the previous open block
                 if last and last["ended_at"] is None:
                     block_start_dt = datetime.fromisoformat(last["started_at"])
                     dur = max(int((state_started_dt - block_start_dt).total_seconds()), 0)
@@ -323,10 +325,12 @@ async def _stitch_blocks(db, agents_snapshot: dict, polled_at: str) -> None:
                         "UPDATE agent_state_blocks SET ended_at = $1, duration_seconds = $2 WHERE id = $3",
                         state_started, dur, last["id"],
                     )
+                # Open a new block for the new state
                 await db.execute(
                     """INSERT INTO agent_state_blocks
                        (agent_name, state, started_at, ended_at, duration_seconds)
-                       VALUES ($1, $2, $3, NULL, $4)""",
+                       VALUES ($1, $2, $3, NULL, $4)
+                       ON CONFLICT (agent_name, started_at) DO NOTHING""",
                     agent_name, status, state_started, duration_in_state,
                 )
         except Exception as exc:
