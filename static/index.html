@@ -172,17 +172,6 @@ tr.team-row td { font-weight: 700; border-top: 2px solid var(--border); backgrou
     <div class="kpi"><div class="kpi-label">Avg 1st Pay</div><div class="kpi-val" id="kAvgPay">—</div></div>
   </div>
 
-  <div id="rnaCard" class="card" style="display:none;margin-bottom:16px">
-    <div class="card-header">
-      <span class="card-title">Ring No Answer Distribution</span>
-      <span class="dim" style="font-size:11px" id="rnaTotalLabel"></span>
-    </div>
-    <div style="padding:16px;display:flex;align-items:center;gap:24px;flex-wrap:wrap">
-      <div id="rnaChartWrap"></div>
-      <div id="rnaLegend" style="display:flex;flex-direction:column;gap:6px;font-size:12px;min-width:160px"></div>
-    </div>
-  </div>
-
   <div class="card">
     <div class="card-header">
       <span class="card-title" id="tableTitle">Agent Performance — Today</span>
@@ -216,6 +205,18 @@ tr.team-row td { font-weight: 700; border-top: 2px solid var(--border); backgrou
       </table>
     </div>
   </div>
+
+  <div id="rnaCard" class="card" style="display:none;margin-top:16px">
+    <div class="card-header">
+      <span class="card-title">Ring No Answer Distribution</span>
+      <span class="dim" style="font-size:11px" id="rnaTotalLabel"></span>
+    </div>
+    <div style="padding:16px;display:flex;align-items:center;gap:24px;flex-wrap:wrap">
+      <div id="rnaChartWrap"></div>
+      <div id="rnaLegend" style="display:flex;flex-direction:column;gap:6px;font-size:12px;min-width:160px"></div>
+    </div>
+  </div>
+
 </div>
 
 <!-- Modal -->
