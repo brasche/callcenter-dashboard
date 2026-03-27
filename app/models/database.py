@@ -108,8 +108,11 @@ _MIGRATIONS = [
     )""",
     "CREATE INDEX IF NOT EXISTS idx_rna_agent_date ON ring_no_answer_events(agent, event_at)",
     "CREATE INDEX IF NOT EXISTS idx_rna_queue_date ON ring_no_answer_events(queue, event_at)",
-    # Deals: unique per spreadsheet row so upsert works without DELETE
-    "CREATE UNIQUE INDEX IF NOT EXISTS idx_deals_sheet_row ON deals(sheet_row) WHERE sheet_row IS NOT NULL",
+    # Deals: unique per spreadsheet row so upsert works without DELETE.
+    # Must be a full (non-partial) unique index for ON CONFLICT(sheet_row) to match.
+    "DROP INDEX IF EXISTS idx_deals_sheet_row",
+    "DELETE FROM deals WHERE sheet_row IS NULL",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_deals_sheet_row ON deals(sheet_row)",
 ]
 
 
