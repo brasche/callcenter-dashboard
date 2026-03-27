@@ -209,8 +209,10 @@ async def get_agents(start: Optional[str] = Query(None), end: Optional[str] = Qu
                 LOWER(d.agent_name) = LOWER(a.short_name)
                 OR (a.full_name IS NOT NULL AND LOWER(d.agent_name) = LOWER(a.full_name))
             )
+            WHERE d.submitted_at BETWEEN $1 AND $2
             GROUP BY a.short_name, a.bluerock_username
             """,
+            start_dt, end_dt,
         )
 
         deal_by_agent: dict[str, dict] = {
@@ -454,9 +456,10 @@ async def get_agent_detail(
                 OR (a.full_name IS NOT NULL AND LOWER(d.agent_name) = LOWER(a.full_name))
             )
             WHERE LOWER(a.bluerock_username) = LOWER($1)
+              AND d.submitted_at BETWEEN $2 AND $3
             ORDER BY d.submitted_at DESC
             """,
-            agent_name,
+            agent_name, start_dt, end_dt,
         )]
 
         # Agent mapping info
@@ -589,8 +592,10 @@ async def get_team(start: Optional[str] = Query(None), end: Optional[str] = Quer
                    AVG(deal_value) AS avg_debt,
                    AVG(first_payment_amount) AS avg_first_payment,
                    SUM(deal_value) AS total_value
-            FROM deals WHERE submitted_at IS NOT NULL
+            FROM deals
+            WHERE submitted_at BETWEEN $1 AND $2
             """,
+            start_dt, end_dt,
         ))
 
     total       = s["total_calls"] or 0
