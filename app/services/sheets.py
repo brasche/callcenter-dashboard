@@ -154,11 +154,13 @@ async def sync_sheets():
         async with get_db() as db:
             # Upsert every row — no date filter, no DELETE
             # sheet_row (spreadsheet row number) is the natural unique key
+            active_sheet_rows: list[int] = []
             for idx, row in enumerate(data_rows, start=GOOGLE_SHEETS_HEADER_ROW + 1):
                 submitted_raw = _col(GOOGLE_SHEETS_COL_TIMESTAMP, row)
                 submitted_dt  = _parse_timestamp(submitted_raw)
                 if submitted_dt is None:
                     continue  # skip rows with no parseable timestamp
+                active_sheet_rows.append(idx)
 
                 agent_name    = _col(GOOGLE_SHEETS_COL_AGENT, row)
                 client_id_raw = _col(GOOGLE_SHEETS_COL_PHONE, row)
@@ -195,6 +197,19 @@ async def sync_sheets():
                     json.dumps(row), idx,
                 )
                 records_written += 1
+
+            # Remove deals whose sheet row was deleted from the spreadsheet
+            if active_sheet_rows:
+                deleted = await db.fetchval(
+                    "SELECT COUNT(*) FROM deals WHERE sheet_row IS NOT NULL AND NOT (sheet_row = ANY($1))",
+                    active_sheet_rows,
+                )
+                if deleted:
+                    await db.execute(
+                        "DELETE FROM deals WHERE sheet_row IS NOT NULL AND NOT (sheet_row = ANY($1))",
+                        active_sheet_rows,
+                    )
+                    logger.info("Deals reconciliation: removed %d rows no longer in sheet", deleted)
 
         logger.info("Sheets sync done — %d deals loaded", records_written)
 

@@ -34,15 +34,10 @@ def _today_range():
 
 
 def _date_range(start: Optional[str], end: Optional[str]):
-    if start:
-        start_dt = f"{start} 00:00:00"
-    else:
-        start_dt = f"{date.today().isoformat()} 00:00:00"
-    if end:
-        end_dt = f"{end} 23:59:59"
-    else:
-        end_dt = f"{date.today().isoformat()} 23:59:59"
-    return start_dt, end_dt
+    today = date.today().isoformat()
+    start_date = start or today
+    end_date   = end   or today
+    return f"{start_date} 00:00:00", f"{end_date} 23:59:59", start_date, end_date
 
 
 def _is_subseq(needle: str, haystack: str) -> bool:
@@ -123,7 +118,7 @@ async def get_live():
 
 @router.get("/agents")
 async def get_agents(start: Optional[str] = Query(None), end: Optional[str] = Query(None)):
-    start_dt, end_dt = _date_range(start, end)
+    start_dt, end_dt, start_date, end_date = _date_range(start, end)
     is_today = (start is None and end is None) or (
         start == date.today().isoformat() and (end is None or end == date.today().isoformat())
     )
@@ -209,10 +204,10 @@ async def get_agents(start: Optional[str] = Query(None), end: Optional[str] = Qu
                 LOWER(d.agent_name) = LOWER(a.short_name)
                 OR (a.full_name IS NOT NULL AND LOWER(d.agent_name) = LOWER(a.full_name))
             )
-            WHERE d.submitted_at BETWEEN $1 AND $2
+            WHERE SUBSTRING(d.submitted_at, 1, 10) BETWEEN $1 AND $2
             GROUP BY a.short_name, a.bluerock_username
             """,
-            start_dt, end_dt,
+            start_date, end_date,
         )
 
         deal_by_agent: dict[str, dict] = {
@@ -395,7 +390,7 @@ async def get_agent_detail(
     start: Optional[str] = Query(None),
     end:   Optional[str] = Query(None),
 ):
-    start_dt, end_dt = _date_range(start, end)
+    start_dt, end_dt, start_date, end_date = _date_range(start, end)
     date_str = (start or date.today().isoformat())
 
     async with get_db() as db:
@@ -456,10 +451,10 @@ async def get_agent_detail(
                 OR (a.full_name IS NOT NULL AND LOWER(d.agent_name) = LOWER(a.full_name))
             )
             WHERE LOWER(a.bluerock_username) = LOWER($1)
-              AND d.submitted_at BETWEEN $2 AND $3
+              AND SUBSTRING(d.submitted_at, 1, 10) BETWEEN $2 AND $3
             ORDER BY d.submitted_at DESC
             """,
-            agent_name, start_dt, end_dt,
+            agent_name, start_date, end_date,
         )]
 
         # Agent mapping info
@@ -567,7 +562,7 @@ async def get_agent_detail(
 
 @router.get("/team")
 async def get_team(start: Optional[str] = Query(None), end: Optional[str] = Query(None)):
-    start_dt, end_dt = _date_range(start, end)
+    start_dt, end_dt, start_date, end_date = _date_range(start, end)
     async with get_db() as db:
         s = _row_to_dict(await db.fetchrow(
             """
@@ -593,9 +588,9 @@ async def get_team(start: Optional[str] = Query(None), end: Optional[str] = Quer
                    AVG(first_payment_amount) AS avg_first_payment,
                    SUM(deal_value) AS total_value
             FROM deals
-            WHERE submitted_at BETWEEN $1 AND $2
+            WHERE SUBSTRING(submitted_at, 1, 10) BETWEEN $1 AND $2
             """,
-            start_dt, end_dt,
+            start_date, end_date,
         ))
 
     total       = s["total_calls"] or 0
@@ -626,7 +621,7 @@ async def get_team(start: Optional[str] = Query(None), end: Optional[str] = Quer
 
 @router.get("/rna")
 async def get_rna(start: Optional[str] = Query(None), end: Optional[str] = Query(None)):
-    start_dt, end_dt = _date_range(start, end)
+    start_dt, end_dt, start_date, end_date = _date_range(start, end)
     async with get_db() as db:
         agent_rows = [_row_to_dict(r) for r in await db.fetch(
             """
