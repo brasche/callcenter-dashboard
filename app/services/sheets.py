@@ -133,8 +133,6 @@ async def sync_sheets():
         data_rows = all_rows[GOOGLE_SHEETS_HEADER_ROW:]
         logger.info("Deals sheet: %d data rows", len(data_rows))
 
-        today_date = datetime.now().date()
-
         def _parse_timestamp(val: str | None):
             if not val:
                 return None
@@ -145,14 +143,22 @@ async def sync_sheets():
                     pass
             return None
 
+        def _parse_amount(raw):
+            if not raw:
+                return None
+            try:
+                return float(raw.replace("$", "").replace(",", "").strip())
+            except ValueError:
+                return None
+
         async with get_db() as db:
-            await db.execute("DELETE FROM deals")
+            # Upsert every row — no date filter, no DELETE
+            # sheet_row (spreadsheet row number) is the natural unique key
             for idx, row in enumerate(data_rows, start=GOOGLE_SHEETS_HEADER_ROW + 1):
                 submitted_raw = _col(GOOGLE_SHEETS_COL_TIMESTAMP, row)
                 submitted_dt  = _parse_timestamp(submitted_raw)
-
-                if submitted_dt is None or submitted_dt.date() != today_date:
-                    continue
+                if submitted_dt is None:
+                    continue  # skip rows with no parseable timestamp
 
                 agent_name    = _col(GOOGLE_SHEETS_COL_AGENT, row)
                 client_id_raw = _col(GOOGLE_SHEETS_COL_PHONE, row)
@@ -162,26 +168,28 @@ async def sync_sheets():
                 status        = _col(GOOGLE_SHEETS_COL_STATUS, row)
                 client_name   = _col(GOOGLE_SHEETS_COL_CLIENT_NAME, row)
 
-                phone = str(client_id_raw) if client_id_raw else None
-
-                def _parse_amount(raw):
-                    if not raw:
-                        return None
-                    try:
-                        return float(raw.replace("$", "").replace(",", "").strip())
-                    except ValueError:
-                        return None
-
-                deal_value        = _parse_amount(deal_val_raw)
+                phone            = str(client_id_raw) if client_id_raw else None
+                deal_value       = _parse_amount(deal_val_raw)
                 first_payment_amt = _parse_amount(first_pay_raw)
-                submitted_at_str  = submitted_dt.strftime("%Y-%m-%d %H:%M:%S") if submitted_dt else None
+                submitted_at_str = submitted_dt.strftime("%Y-%m-%d %H:%M:%S")
 
                 await db.execute(
                     """INSERT INTO deals
                        (agent_name, client_name, phone_number, enrollment_status,
                         closed_at, deal_value, first_payment_amount, submitted_at,
                         raw_row, sheet_row)
-                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)""",
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                       ON CONFLICT(sheet_row) DO UPDATE SET
+                         agent_name           = EXCLUDED.agent_name,
+                         client_name          = EXCLUDED.client_name,
+                         phone_number         = EXCLUDED.phone_number,
+                         enrollment_status    = EXCLUDED.enrollment_status,
+                         closed_at            = EXCLUDED.closed_at,
+                         deal_value           = EXCLUDED.deal_value,
+                         first_payment_amount = EXCLUDED.first_payment_amount,
+                         submitted_at         = EXCLUDED.submitted_at,
+                         raw_row              = EXCLUDED.raw_row,
+                         synced_at            = NOW()::TEXT""",
                     agent_name, client_name, phone, status,
                     closed_at, deal_value, first_payment_amt, submitted_at_str,
                     json.dumps(row), idx,

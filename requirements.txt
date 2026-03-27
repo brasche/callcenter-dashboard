@@ -12,3 +12,6 @@ google-api-python-client==2.163.0
 
 # PostgreSQL async driver (replaces aiosqlite)
 asyncpg==0.30.0
+
+# Timezone data (needed for zoneinfo on Alpine/Railway)
+tzdata==2025.1

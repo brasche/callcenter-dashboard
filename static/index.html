@@ -273,10 +273,12 @@ function updateDateLabel() {
   }
 }
 function buildAPIParams() {
+  const today = todayISO();
   const p = new URLSearchParams();
-  if (currentStart) p.set('start', currentStart);
-  if (currentEnd)   p.set('end',   currentEnd);
-  return p.toString() ? '?' + p.toString() : '';
+  // Always send explicit dates so the server never falls back to server-side UTC date
+  p.set('start', currentStart || today);
+  p.set('end',   currentEnd   || today);
+  return '?' + p.toString();
 }
 
 // ── Fetch ──────────────────────────────────────────────────────────────────
@@ -548,7 +550,7 @@ async function openModal(agentName) {
   body.innerHTML = '<div style="padding:32px;text-align:center;color:var(--muted)">Loading...</div>';
   bg.classList.add('open');
   try {
-    const d = await fetch(`/api/agents/${encodeURIComponent(agentName)}`).then(r => r.json());
+    const d = await fetch(`/api/agents/${encodeURIComponent(agentName)}${buildAPIParams()}`).then(r => r.json());
     const ag = agents.find(a => a.agent_name === agentName);
     body.innerHTML = buildModal(d, ag);
   } catch(e) {

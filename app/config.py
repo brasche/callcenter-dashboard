@@ -41,3 +41,10 @@ DATABASE_PATH = os.getenv("DATABASE_PATH", "data/callcenter.db")  # legacy, unus
 # Sync intervals (seconds)
 BLUEROCK_SYNC_INTERVAL = int(os.getenv("BLUEROCK_SYNC_INTERVAL", "30"))
 SHEETS_SYNC_INTERVAL = int(os.getenv("SHEETS_SYNC_INTERVAL", "300"))
+
+# Active hours — BlueRock API calls are skipped outside this window to save resources.
+# ACTIVE_TIMEZONE: any IANA timezone string, e.g. "America/New_York", "America/Chicago"
+# ACTIVE_HOURS_START / END: 24-hour integers (default 7am–8pm)
+ACTIVE_TIMEZONE    = os.getenv("ACTIVE_TIMEZONE", "America/New_York")
+ACTIVE_HOURS_START = int(os.getenv("ACTIVE_HOURS_START", "7"))
+ACTIVE_HOURS_END   = int(os.getenv("ACTIVE_HOURS_END", "20"))

@@ -21,11 +21,25 @@ import hashlib
 import json
 import logging
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import httpx
 
-from app.config import BLUEROCK_API_KEY, BLUEROCK_API_URL, BLUEROCK_QUEUES
+from app.config import (
+    BLUEROCK_API_KEY, BLUEROCK_API_URL, BLUEROCK_QUEUES,
+    ACTIVE_TIMEZONE, ACTIVE_HOURS_START, ACTIVE_HOURS_END,
+)
 from app.models.database import get_db
+
+
+def _is_active_hours() -> bool:
+    """Return True if the current local time is within configured active hours."""
+    try:
+        tz = ZoneInfo(ACTIVE_TIMEZONE)
+        hour = datetime.now(tz).hour
+        return ACTIVE_HOURS_START <= hour < ACTIVE_HOURS_END
+    except Exception:
+        return True  # on any error, allow sync
 
 logger = logging.getLogger(__name__)
 
@@ -205,6 +219,11 @@ async def sync_bluerock():
         logger.warning("BLUEROCK_API_KEY not set — skipping sync")
         return
 
+    if not _is_active_hours():
+        logger.debug("Outside active hours (%s–%s %s) — skipping BlueRock sync",
+                     ACTIVE_HOURS_START, ACTIVE_HOURS_END, ACTIVE_TIMEZONE)
+        return
+
     logger.info("BlueRock sync starting…")
     total_written = 0
     error_msg = None
@@ -379,6 +398,9 @@ async def _stitch_blocks(db, agents_snapshot: dict, polled_at: str) -> None:
 async def poll_agent_status() -> None:
     """Poll /agents/status every 30 s, write raw snapshots, stitch state blocks."""
     if not BLUEROCK_API_KEY:
+        return
+
+    if not _is_active_hours():
         return
 
     logger.debug("Polling /agents/status…")
