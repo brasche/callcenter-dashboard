@@ -526,6 +526,11 @@ async def get_agent_detail(
         (ag for ag in stats_cache if (ag.get("agent") or "").lower() == agent_name.lower()),
         {}
     )
+
+    # Merge live talk_time into daily_stats if DB row is missing/zero (column newly added)
+    if not daily_stats.get("talk_time") and br_stats_raw.get("talk_time"):
+        daily_stats["talk_time"] = int(br_stats_raw.get("talk_time") or 0)
+
     act = get_agent_activity().get(agent_name, {})
     if act and not br_stats_raw:
         br_stats_raw = {

@@ -850,7 +850,7 @@ function buildModal(d, ag) {
         <td class="fmono dim" style="font-size:11px">${esc(c.phone_number||'—')}</td>
         <td class="right"><span class="pill ${durCls}">${fmtDur(dur)}</span></td>
         <td class="dim" style="font-size:11px">${esc(c.exit_reason||'—')}</td>
-        <td>${c.id ? `<button onclick="dlRec('${esc(c.id)}')" title="Download recording" style="background:none;border:none;cursor:pointer;color:var(--accent);font-size:14px;padding:0">🎧</button>` : ''}</td>
+        <td></td>
       </tr>`;
       prevEndMs = endMs;
     });
@@ -882,6 +882,9 @@ function buildModal(d, ag) {
 }
 
 async function dlRec(callId) {
+  // BlueRock API does not expose a recording download endpoint.
+  alert('Recording downloads are not available via the BlueRock API. Please access recordings directly in the BlueRock portal.');
+  return;
   try {
     const res = await fetch(`/api/recordings/${callId}`);
     if (!res.ok) {
