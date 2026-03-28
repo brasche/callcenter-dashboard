@@ -529,9 +529,17 @@ async def get_agent_detail(
         {}
     )
 
-    # Merge live talk_time into daily_stats if DB row is missing/zero (column newly added)
+    # Ensure talk_time is populated:
+    #   1. Prefer the daily_stats DB row (populated by the 5-min sync job)
+    #   2. Fall back to the live in-memory cache (today only)
+    #   3. Fall back to SUM(duration_sec) of answered calls from the calls table
+    #      — always accurate for historical dates
     if not daily_stats.get("talk_time") and br_stats_raw.get("talk_time"):
         daily_stats["talk_time"] = int(br_stats_raw.get("talk_time") or 0)
+    if not daily_stats.get("talk_time"):
+        daily_stats["talk_time"] = sum(
+            c["duration_sec"] for c in all_calls_asc if c.get("answered") and c.get("duration_sec")
+        )
 
     act = get_agent_activity().get(agent_name, {})
     if act and not br_stats_raw:
