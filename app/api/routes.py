@@ -399,11 +399,10 @@ async def get_agent_trends(
             """
             SELECT
                 SUBSTRING(started_at, 1, 10) AS day,
-                COUNT(*) FILTER (WHERE answered=1 AND direction='inbound')  AS ib_calls,
-                COUNT(*) FILTER (WHERE answered=1 AND direction='outbound') AS ob_calls,
-                COALESCE(SUM(duration_sec)  FILTER (WHERE answered=1), 0)  AS total_talk_sec,
+                COUNT(*) FILTER (WHERE answered=1 AND direction='inbound')   AS ib_calls,
+                COUNT(*) FILTER (WHERE answered=1 AND direction='outbound')  AS ob_calls,
+                COALESCE(SUM(duration_sec)  FILTER (WHERE answered=1), 0)   AS total_talk_sec,
                 COALESCE(CAST(AVG(duration_sec) FILTER (WHERE answered=1) AS INTEGER), 0) AS avg_talk_sec,
-                COUNT(*) FILTER (WHERE answered=1 AND duration_sec >= 120)  AS calls_2min,
                 COUNT(*) FILTER (WHERE answered=1 AND duration_sec >= 300)  AS calls_5min,
                 COUNT(*) FILTER (WHERE answered=1 AND duration_sec >= 600)  AS calls_10min,
                 COUNT(*) FILTER (WHERE answered=1 AND duration_sec >= 1200) AS calls_20min
@@ -416,7 +415,10 @@ async def get_agent_trends(
 
         deal_days = await db.fetch(
             """
-            SELECT SUBSTRING(d.submitted_at, 1, 10) AS day, COUNT(*) AS deals
+            SELECT SUBSTRING(d.submitted_at, 1, 10) AS day,
+                   COUNT(*) AS deals,
+                   AVG(d.deal_value) AS avg_debt,
+                   AVG(d.first_payment_amount) AS avg_first_payment
             FROM deals d
             INNER JOIN agents a ON (
                 LOWER(d.agent_name) = LOWER(a.short_name)
@@ -439,9 +441,55 @@ async def get_agent_trends(
             agent_name, start_date, end_date,
         )
 
-    call_by_day = {r["day"]: _row_to_dict(r) for r in call_days}
-    deal_by_day = {r["day"]: int(r["deals"]) for r in deal_days}
-    stat_by_day = {r["day"]: _row_to_dict(r) for r in stat_days}
+        rna_days = await db.fetch(
+            """
+            SELECT SUBSTRING(event_at, 1, 10) AS day, COUNT(*) AS rna
+            FROM ring_no_answer_events
+            WHERE agent = $1 AND event_at BETWEEN $2 AND $3
+            GROUP BY day ORDER BY day
+            """,
+            agent_name, start_dt, end_dt,
+        )
+
+        # Queue breakdown totals across the full period
+        queue_rows = await db.fetch(
+            """
+            SELECT queue,
+                   COUNT(*) FILTER (WHERE answered=1)                              AS calls,
+                   COALESCE(SUM(duration_sec) FILTER (WHERE answered=1), 0)        AS total_talk_sec,
+                   CAST(AVG(duration_sec) FILTER (WHERE answered=1) AS INTEGER)    AS avg_talk_sec,
+                   COUNT(*) FILTER (WHERE answered=1 AND duration_sec >= 300)      AS calls_5min,
+                   COUNT(*) FILTER (WHERE answered=1 AND duration_sec >= 1200)     AS calls_20min
+            FROM calls
+            WHERE agent_name = $1 AND started_at BETWEEN $2 AND $3
+            GROUP BY queue ORDER BY calls DESC
+            """,
+            agent_name, start_dt, end_dt,
+        )
+
+        # Deal totals per queue (matched via phone number on the calls table)
+        queue_deal_rows = await db.fetch(
+            """
+            SELECT c.queue,
+                   COUNT(DISTINCT d.id) AS deals,
+                   AVG(d.deal_value) AS avg_debt
+            FROM calls c
+            INNER JOIN deals d ON d.phone_number = c.phone_number
+            INNER JOIN agents a ON (
+                LOWER(d.agent_name) = LOWER(a.short_name)
+                OR (a.full_name IS NOT NULL AND LOWER(d.agent_name) = LOWER(a.full_name))
+            )
+            WHERE c.agent_name = $1 AND c.started_at BETWEEN $2 AND $3
+              AND LOWER(a.bluerock_username) = LOWER($1)
+            GROUP BY c.queue
+            """,
+            agent_name, start_dt, end_dt,
+        )
+
+    call_by_day  = {r["day"]: _row_to_dict(r) for r in call_days}
+    deal_by_day  = {r["day"]: _row_to_dict(r) for r in deal_days}
+    stat_by_day  = {r["day"]: _row_to_dict(r) for r in stat_days}
+    rna_by_day   = {r["day"]: int(r["rna"]) for r in rna_days}
 
     start_d = date.fromisoformat(start_date)
     end_d   = date.fromisoformat(end_date)
@@ -449,37 +497,63 @@ async def get_agent_trends(
     cur = start_d
     while cur <= end_d:
         day_str = cur.isoformat()
-        c = call_by_day.get(day_str, {})
-        s = stat_by_day.get(day_str, {})
-        deals    = deal_by_day.get(day_str, 0)
+        c  = call_by_day.get(day_str, {})
+        s  = stat_by_day.get(day_str, {})
+        dr = deal_by_day.get(day_str, {})
+        deals    = int(dr.get("deals", 0) or 0)
         ib       = int(c.get("ib_calls", 0) or 0)
-        ob       = int(c.get("ob_calls", 0) or 0)
         talk_sec = int(c.get("total_talk_sec", 0) or 0)
         avg_talk = int(c.get("avg_talk_sec", 0) or 0)
         c5       = int(c.get("calls_5min", 0) or 0)
+        c20      = int(c.get("calls_20min", 0) or 0)
         log_t    = int(s.get("log_time", 0) or 0)
         pause_t  = int(s.get("pause_time", 0) or 0)
-        # prefer daily_stats talk_time; fall back to sum of call durations
         tt       = int(s.get("talk_time", 0) or 0) or talk_sec
         active_t = max(log_t - pause_t, 0)
         days.append({
-            "day":            day_str,
-            "ib_calls":       ib,
-            "ob_calls":       ob,
-            "total_talk_sec": tt,
-            "avg_talk_sec":   avg_talk,
-            "calls_5min":     c5,
-            "calls_10min":    int(c.get("calls_10min", 0) or 0),
-            "calls_20min":    int(c.get("calls_20min", 0) or 0),
-            "pct_5min":       _pct(c5, ib),
-            "deals":          deals,
-            "cps":            round(ib / deals, 1) if deals else None,
-            "active_time_sec": active_t,
-            "log_time_sec":   log_t,
+            "day":              day_str,
+            "ib_calls":         ib,
+            "ob_calls":         int(c.get("ob_calls", 0) or 0),
+            "total_talk_sec":   tt,
+            "avg_talk_sec":     avg_talk,
+            "calls_5min":       c5,
+            "calls_10min":      int(c.get("calls_10min", 0) or 0),
+            "calls_20min":      c20,
+            "pct_5min":         _pct(c5, ib),
+            "pct_20min":        _pct(c20, ib),
+            "deals":            deals,
+            "cps":              round(ib / deals, 1) if deals else None,
+            "close_pct_20min":  _pct(deals, c20),
+            "avg_debt":         round(float(dr.get("avg_debt") or 0), 2),
+            "avg_first_payment":round(float(dr.get("avg_first_payment") or 0), 2),
+            "rna":              rna_by_day.get(day_str, 0),
+            "active_time_sec":  active_t,
+            "log_time_sec":     log_t,
         })
         cur += timedelta(days=1)
 
-    return {"days": days, "agent_name": agent_name}
+    # Queue summary
+    deal_by_queue = {r["queue"]: _row_to_dict(r) for r in queue_deal_rows}
+    queues = []
+    for r in queue_rows:
+        q = r["queue"]
+        calls = int(r["calls"] or 0)
+        c20q  = int(r["calls_20min"] or 0)
+        dq    = deal_by_queue.get(q, {})
+        dq_deals = int(dq.get("deals", 0) or 0)
+        queues.append({
+            "queue":          q,
+            "calls":          calls,
+            "total_talk_sec": int(r["total_talk_sec"] or 0),
+            "avg_talk_sec":   int(r["avg_talk_sec"] or 0) if r["avg_talk_sec"] else 0,
+            "pct_5min":       _pct(int(r["calls_5min"] or 0), calls),
+            "calls_20min":    c20q,
+            "deals":          dq_deals,
+            "close_pct_20min": _pct(dq_deals, c20q),
+            "avg_debt":       round(float(dq.get("avg_debt") or 0), 2),
+        })
+
+    return {"days": days, "queues": queues, "agent_name": agent_name}
 
 
 # ---------------------------------------------------------------------------

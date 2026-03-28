@@ -54,6 +54,9 @@ nav a.active { color: var(--text); background: var(--surface2); font-weight: 600
 .date-bar button:hover { opacity: .85; }
 #todayBtn { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; color: var(--muted); padding: 5px 12px; font-size: 12px; cursor: pointer; }
 #todayBtn:hover { color: var(--text); }
+.dash-period-btn { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; color: var(--muted); padding: 5px 12px; font-size: 12px; cursor: pointer; }
+.dash-period-btn:hover { color: var(--text); }
+.dash-period-btn.active { background: rgba(79,110,247,.15); border-color: var(--accent); color: var(--accent); }
 #dateRangeLabel { color: var(--muted); font-size: 11px; margin-left: 6px; }
 
 /* KPI strip */
@@ -169,8 +172,14 @@ tr.team-row td { font-weight: 700; border-top: 2px solid var(--border); backgrou
   background: var(--surface2); border: 1px solid var(--border); border-radius: 6px;
   color: var(--text); padding: 4px 8px; font-size: 12px; color-scheme: dark;
 }
-.chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; }
-.chart-card { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
+.chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(480px, 1fr)); gap: 16px; }
+.chart-card { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; }
+.chart-title { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 12px; }
+.queue-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-top: 16px; }
+.queue-kpi-card { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
+.queue-kpi-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 4px; }
+.queue-kpi-val { font-size: 20px; font-weight: 800; }
+.queue-kpi-sub { font-size: 11px; color: var(--muted); margin-top: 3px; }
 </style>
 </head>
 <body>
@@ -195,6 +204,11 @@ tr.team-row td { font-weight: 700; border-top: 2px solid var(--border); backgrou
     <input type="date" id="endDate">
     <button onclick="applyDateRange()">Apply</button>
     <button id="todayBtn" onclick="resetToToday()">Today</button>
+    <button class="dash-period-btn" id="dashYesterdayBtn" onclick="dashPeriod('yesterday')">Yesterday</button>
+    <button class="dash-period-btn" id="dashWtdBtn"       onclick="dashPeriod('wtd')">WTD</button>
+    <button class="dash-period-btn" id="dashMtdBtn"       onclick="dashPeriod('mtd')">MTD</button>
+    <button class="dash-period-btn" id="dash7dBtn"        onclick="dashPeriod('7d')">Past 7</button>
+    <button class="dash-period-btn" id="dash30dBtn"       onclick="dashPeriod('30d')">Past 30</button>
     <span id="dateRangeLabel"></span>
   </div>
 
@@ -314,6 +328,31 @@ function resetToToday() {
   document.getElementById('startDate').value = t;
   document.getElementById('endDate').value   = t;
   currentStart = null; currentEnd = null;
+  document.querySelectorAll('.dash-period-btn').forEach(b => b.classList.remove('active'));
+  updateDateLabel(); fetchAll();
+}
+function dashPeriod(period) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  let s, e = todayISO();
+  if (period === 'yesterday') {
+    const y = new Date(today - 864e5);
+    s = y.toISOString().slice(0,10); e = s;
+  } else if (period === '7d') {
+    s = new Date(today - 6*864e5).toISOString().slice(0,10);
+  } else if (period === '30d') {
+    s = new Date(today - 29*864e5).toISOString().slice(0,10);
+  } else if (period === 'wtd') {
+    const mon = new Date(today); mon.setDate(today.getDate() - ((today.getDay()+6)%7));
+    s = mon.toISOString().slice(0,10);
+  } else if (period === 'mtd') {
+    s = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0,10);
+  }
+  document.getElementById('startDate').value = s;
+  document.getElementById('endDate').value   = e;
+  currentStart = s; currentEnd = e;
+  document.querySelectorAll('.dash-period-btn').forEach(b => b.classList.remove('active'));
+  const map = {yesterday:'dashYesterdayBtn',wtd:'dashWtdBtn',mtd:'dashMtdBtn','7d':'dash7dBtn','30d':'dash30dBtn'};
+  if (map[period]) document.getElementById(map[period]).classList.add('active');
   updateDateLabel(); fetchAll();
 }
 function updateDateLabel() {
@@ -1039,7 +1078,7 @@ function setTrendsPeriod(btn, forceCustom) {
 
 // ── Chart renderers ────────────────────────────────────────────────────────
 function _svgBar({ labels, values, color, title, fmt }) {
-  const W = 480, H = 180, pad = { l: 46, r: 8, t: 22, b: 30 };
+  const W = 540, H = 220, pad = { l: 52, r: 10, t: 28, b: 34 };
   const pw = W - pad.l - pad.r, ph = H - pad.t - pad.b;
   const n = values.length;
   const maxV = Math.max(...values, 1);
@@ -1049,34 +1088,34 @@ function _svgBar({ labels, values, color, title, fmt }) {
   const grid = ticks.map(t => {
     const y = (pad.t + ph * (1 - t)).toFixed(1);
     return `<line x1="${pad.l}" y1="${y}" x2="${W - pad.r}" y2="${y}" stroke="#2e3250" stroke-width="1"/>
-            <text x="${pad.l - 4}" y="${(+y + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="#7b82a0">${f(maxV * t)}</text>`;
+            <text x="${pad.l - 5}" y="${(+y + 3.5).toFixed(1)}" text-anchor="end" font-size="10" fill="#7b82a0">${f(maxV * t)}</text>`;
   }).join('');
 
   const slotW = pw / n;
-  const barW  = Math.max(slotW * 0.55, 2);
+  const barW  = Math.max(slotW * 0.6, 3);
   const bars  = values.map((v, i) => {
     const bh = ph * (v / maxV);
-    const x  = (pad.l + i * slotW + slotW * 0.225).toFixed(1);
+    const x  = (pad.l + i * slotW + (slotW - barW) / 2).toFixed(1);
     const y  = (pad.t + ph - bh).toFixed(1);
     return `<rect x="${x}" y="${y}" width="${barW.toFixed(1)}" height="${bh.toFixed(1)}" fill="${color}" rx="2" opacity=".85">
               <title>${labels[i]}: ${f(v)}</title></rect>`;
   }).join('');
 
-  const showEvery = Math.ceil(n / 8);
+  const showEvery = Math.ceil(n / 10);
   const xlbls = labels.map((l, i) => {
     if (i % showEvery !== 0 && i !== n - 1) return '';
     const x = (pad.l + i * slotW + slotW / 2).toFixed(1);
-    return `<text x="${x}" y="${H - 6}" text-anchor="middle" font-size="9" fill="#7b82a0">${l.slice(5)}</text>`;
+    return `<text x="${x}" y="${H - 8}" text-anchor="middle" font-size="10" fill="#7b82a0">${l.slice(5)}</text>`;
   }).join('');
 
   return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block">
-    <text x="${pad.l}" y="14" font-size="11" font-weight="700" fill="#e2e8f0">${title}</text>
+    <text x="${pad.l}" y="17" font-size="12" font-weight="700" fill="#e2e8f0">${title}</text>
     ${grid}${bars}${xlbls}
   </svg>`;
 }
 
 function _svgLine({ labels, values, color, title, fmt }) {
-  const W = 480, H = 180, pad = { l: 46, r: 8, t: 22, b: 30 };
+  const W = 540, H = 220, pad = { l: 52, r: 10, t: 28, b: 34 };
   const pw = W - pad.l - pad.r, ph = H - pad.t - pad.b;
   const n = values.length;
   const maxV = Math.max(...values, 1);
@@ -1086,7 +1125,7 @@ function _svgLine({ labels, values, color, title, fmt }) {
   const grid = ticks.map(t => {
     const y = (pad.t + ph * (1 - t)).toFixed(1);
     return `<line x1="${pad.l}" y1="${y}" x2="${W - pad.r}" y2="${y}" stroke="#2e3250" stroke-width="1"/>
-            <text x="${pad.l - 4}" y="${(+y + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="#7b82a0">${f(maxV * t)}</text>`;
+            <text x="${pad.l - 5}" y="${(+y + 3.5).toFixed(1)}" text-anchor="end" font-size="10" fill="#7b82a0">${f(maxV * t)}</text>`;
   }).join('');
 
   const xOf = i => pad.l + (n < 2 ? pw / 2 : i * pw / (n - 1));
@@ -1094,23 +1133,48 @@ function _svgLine({ labels, values, color, title, fmt }) {
   const pts = values.map((v, i) => `${xOf(i).toFixed(1)},${yOf(v).toFixed(1)}`);
   const area = `${pad.l},${(pad.t + ph).toFixed(1)} ${pts.join(' ')} ${xOf(n-1).toFixed(1)},${(pad.t + ph).toFixed(1)}`;
 
-  const showEvery = Math.ceil(n / 8);
+  const showEvery = Math.ceil(n / 10);
   const xlbls = labels.map((l, i) => {
     if (i % showEvery !== 0 && i !== n - 1) return '';
-    return `<text x="${xOf(i).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="9" fill="#7b82a0">${l.slice(5)}</text>`;
+    return `<text x="${xOf(i).toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="10" fill="#7b82a0">${l.slice(5)}</text>`;
   }).join('');
 
   const dots = values.map((v, i) =>
-    `<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(v).toFixed(1)}" r="${n > 20 ? 2 : 3}" fill="${color}">
+    `<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(v).toFixed(1)}" r="${n > 20 ? 2.5 : 3.5}" fill="${color}">
        <title>${labels[i]}: ${f(v)}</title></circle>`
   ).join('');
 
   return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block">
-    <text x="${pad.l}" y="14" font-size="11" font-weight="700" fill="#e2e8f0">${title}</text>
+    <text x="${pad.l}" y="17" font-size="12" font-weight="700" fill="#e2e8f0">${title}</text>
     ${grid}
     <polygon points="${area}" fill="${color}" opacity=".08"/>
-    <polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="2"/>
+    <polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="2.5"/>
     ${dots}${xlbls}
+  </svg>`;
+}
+
+// Horizontal bar chart for queue comparisons
+function _svgHBar({ queues, values, color, title, fmt }) {
+  const W = 540, rowH = 32, pad = { l: 120, r: 60, t: 28, b: 10 };
+  const H = pad.t + queues.length * rowH + pad.b;
+  const maxV = Math.max(...values, 1);
+  const f = fmt || (v => v);
+  const pw = W - pad.l - pad.r;
+
+  const bars = queues.map((q, i) => {
+    const v = values[i];
+    const bw = (pw * v / maxV).toFixed(1);
+    const y  = pad.t + i * rowH;
+    return `
+      <text x="${pad.l - 6}" y="${y + rowH/2 + 4}" text-anchor="end" font-size="11" fill="#7b82a0">${esc(q)}</text>
+      <rect x="${pad.l}" y="${y + 6}" width="${bw}" height="${rowH - 12}" fill="${color}" rx="3" opacity=".85">
+        <title>${q}: ${f(v)}</title></rect>
+      <text x="${pad.l + +bw + 5}" y="${y + rowH/2 + 4}" font-size="11" font-weight="700" fill="#e2e8f0">${f(v)}</text>`;
+  }).join('');
+
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block">
+    <text x="0" y="17" font-size="12" font-weight="700" fill="#e2e8f0">${title}</text>
+    ${bars}
   </svg>`;
 }
 
@@ -1119,7 +1183,6 @@ async function loadTrends(start, end) {
   const container = document.getElementById('trends-charts');
   container.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:12px 0">Loading…</div>';
 
-  // Pre-fill custom inputs with current range
   document.getElementById('trends-start').value = start;
   document.getElementById('trends-end').value   = end;
 
@@ -1139,46 +1202,99 @@ async function loadTrends(start, end) {
     return;
   }
 
-  const labels  = days.map(d => d.day);
-  const fmtMin  = s => `${Math.round(s / 60)}m`;
-  const fmtHr   = s => `${(s / 3600).toFixed(1)}h`;
-  const fmtPct  = v => `${v}%`;
-  const fmtNum  = v => String(Math.round(v));
+  const labels = days.map(d => d.day);
+  const fmtMin = s => `${Math.round(s / 60)}m`;
+  const fmtHr  = s => `${(s / 3600).toFixed(1)}h`;
+  const fmtPct = v => `${Math.round(v)}%`;
+  const fmtNum = v => String(Math.round(v));
+  const fmtDol = v => v ? `$${Math.round(v).toLocaleString()}` : '—';
 
+  // ── Aggregate summary KPIs ──
+  const totCalls  = days.reduce((s,d)=>s+d.ib_calls, 0);
+  const totDeals  = days.reduce((s,d)=>s+d.deals, 0);
+  const totTalk   = days.reduce((s,d)=>s+d.total_talk_sec, 0);
+  const totRna    = days.reduce((s,d)=>s+d.rna, 0);
+  const avgTalk   = totCalls ? Math.round(totTalk / totCalls) : 0;
+  const avgDebt   = totDeals ? Math.round(days.filter(d=>d.avg_debt>0).reduce((s,d)=>s+d.avg_debt,0) / days.filter(d=>d.avg_debt>0).length) : 0;
+  const avgPay    = totDeals ? Math.round(days.filter(d=>d.avg_first_payment>0).reduce((s,d)=>s+d.avg_first_payment,0) / days.filter(d=>d.avg_first_payment>0).length) : 0;
+  const cps       = totDeals ? (totCalls / totDeals).toFixed(1) : '—';
+  const tot20min  = days.reduce((s,d)=>s+d.calls_20min,0);
+  const close20   = tot20min ? Math.round(totDeals/tot20min*100) : 0;
+  const daysCount = days.filter(d=>d.ib_calls>0).length || 1;
+
+  const summaryKpis = [
+    ['IB Calls',         totCalls,    'var(--accent)',  fmtNum(totCalls)],
+    ['Deals',            totDeals,    'var(--purple)',  fmtNum(totDeals)],
+    ['Talk Time',        totTalk,     'var(--green)',   fmtHr(totTalk)],
+    ['Avg Talk',         avgTalk,     'var(--yellow)',  fmtMin(avgTalk)],
+    ['CPS',              null,        'var(--orange)',  cps],
+    ['20m Close %',      close20,     'var(--red)',     fmtPct(close20)],
+    ['Avg Debt',         avgDebt,     '#818cf8',        fmtDol(avgDebt)],
+    ['Avg 1st Pay',      avgPay,      '#34d399',        fmtDol(avgPay)],
+    ['RNA',              totRna,      'var(--yellow)',  fmtNum(totRna)],
+    ['Active Days',      daysCount,   'var(--muted)',   fmtNum(daysCount)],
+  ].map(([label, , color, val]) =>
+    `<div class="chart-card" style="padding:16px 18px">
+       <div class="queue-kpi-label">${label}</div>
+       <div class="queue-kpi-val" style="font-size:28px;color:${color}">${val}</div>
+     </div>`
+  ).join('');
+
+  // ── Time-series charts ──
   const charts = [
-    _svgBar({
-      labels, title: 'Inbound Calls / Day',
-      values: days.map(d => d.ib_calls),
-      color: 'var(--accent)', fmt: fmtNum,
-    }),
-    _svgBar({
-      labels, title: 'Talk Time / Day',
-      values: days.map(d => d.total_talk_sec),
-      color: '#22c55e', fmt: fmtHr,
-    }),
-    _svgLine({
-      labels, title: 'Avg Call Duration / Day',
-      values: days.map(d => d.avg_talk_sec),
-      color: '#eab308', fmt: fmtMin,
-    }),
-    _svgBar({
-      labels, title: 'Deals / Day',
-      values: days.map(d => d.deals),
-      color: '#a855f7', fmt: fmtNum,
-    }),
-    _svgLine({
-      labels, title: '% Calls ≥ 5 Min / Day',
-      values: days.map(d => d.pct_5min),
-      color: '#f97316', fmt: fmtPct,
-    }),
-    _svgLine({
-      labels, title: 'Active Time / Day',
-      values: days.map(d => d.active_time_sec),
-      color: '#4f6ef7', fmt: fmtHr,
-    }),
-  ];
+    _svgBar({ labels, title: 'Inbound Calls / Day',         values: days.map(d=>d.ib_calls),         color:'#4f6ef7', fmt:fmtNum }),
+    _svgBar({ labels, title: 'Talk Time / Day',              values: days.map(d=>d.total_talk_sec),   color:'#22c55e', fmt:fmtHr  }),
+    _svgLine({ labels, title: 'Avg Call Duration / Day',     values: days.map(d=>d.avg_talk_sec),     color:'#eab308', fmt:fmtMin }),
+    _svgBar({ labels, title: 'Deals / Day',                  values: days.map(d=>d.deals),            color:'#a855f7', fmt:fmtNum }),
+    _svgLine({ labels, title: 'CPS / Day',                   values: days.map(d=>d.cps||0),           color:'#f97316', fmt:v=>`${+v||0}` }),
+    _svgLine({ labels, title: '% Calls ≥ 5 Min / Day',       values: days.map(d=>d.pct_5min),         color:'#fb923c', fmt:fmtPct }),
+    _svgLine({ labels, title: '20 Min Conversion % / Day',   values: days.map(d=>d.close_pct_20min),  color:'#ef4444', fmt:fmtPct }),
+    _svgLine({ labels, title: 'Avg Debt / Day',              values: days.map(d=>d.avg_debt),         color:'#818cf8', fmt:fmtDol }),
+    _svgLine({ labels, title: 'Avg 1st Payment / Day',       values: days.map(d=>d.avg_first_payment),color:'#34d399', fmt:fmtDol }),
+    _svgBar({ labels, title: 'RNA / Day',                    values: days.map(d=>d.rna),              color:'#eab308', fmt:fmtNum }),
+    _svgLine({ labels, title: 'Active Time / Day',           values: days.map(d=>d.active_time_sec),  color:'#4f6ef7', fmt:fmtHr  }),
+  ].map(c => `<div class="chart-card">${c}</div>`).join('');
 
-  container.innerHTML = `<div class="chart-grid">${charts.map(c => `<div class="chart-card">${c}</div>`).join('')}</div>`;
+  // ── Queue breakdown ──
+  const queues = (data.queues || []).filter(q => q.calls > 0);
+  let queueSection = '';
+  if (queues.length) {
+    const qNames  = queues.map(q => q.queue);
+    const qCalls  = queues.map(q => q.calls);
+    const qTalk   = queues.map(q => q.total_talk_sec);
+    const qAvg    = queues.map(q => q.avg_talk_sec);
+    const qDeals  = queues.map(q => q.deals);
+    const qClose  = queues.map(q => q.close_pct_20min);
+    const q5min   = queues.map(q => q.pct_5min);
+
+    const qKpiCards = queues.map(q => `
+      <div class="queue-kpi-card">
+        <div class="queue-kpi-label">${esc(q.queue)}</div>
+        <div class="queue-kpi-val" style="color:var(--accent)">${q.calls} calls</div>
+        <div class="queue-kpi-sub">${fmtHr(q.total_talk_sec)} talk · avg ${fmtMin(q.avg_talk_sec)}</div>
+        <div class="queue-kpi-sub">${q.deals} deals · ${Math.round(q.close_pct_20min)}% 20m close${q.avg_debt ? ' · $'+Math.round(q.avg_debt).toLocaleString()+' avg debt' : ''}</div>
+      </div>`).join('');
+
+    const qCharts = [
+      _svgHBar({ queues:qNames, values:qCalls,  color:'#4f6ef7', title:'Calls by Queue',              fmt:fmtNum }),
+      _svgHBar({ queues:qNames, values:qTalk,   color:'#22c55e', title:'Total Talk Time by Queue',    fmt:fmtHr  }),
+      _svgHBar({ queues:qNames, values:qAvg,    color:'#eab308', title:'Avg Call Duration by Queue',  fmt:fmtMin }),
+      _svgHBar({ queues:qNames, values:qDeals,  color:'#a855f7', title:'Deals by Queue',              fmt:fmtNum }),
+      _svgHBar({ queues:qNames, values:qClose,  color:'#ef4444', title:'20 Min Close % by Queue',     fmt:fmtPct }),
+      _svgHBar({ queues:qNames, values:q5min,   color:'#fb923c', title:'% Calls ≥ 5 Min by Queue',   fmt:fmtPct }),
+    ].map(c => `<div class="chart-card">${c}</div>`).join('');
+
+    queueSection = `
+      <div class="modal-section-title" style="margin:24px 0 10px">Queue Breakdown</div>
+      <div class="queue-grid">${qKpiCards}</div>
+      <div class="chart-grid" style="margin-top:16px">${qCharts}</div>`;
+  }
+
+  const kpiGrid = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:20px">${summaryKpis}</div>`;
+  container.innerHTML = kpiGrid +
+    `<div class="modal-section-title" style="margin-bottom:10px">Daily Trends</div>` +
+    `<div class="chart-grid">${charts}</div>` +
+    queueSection;
 }
 
 function filterCallTable(q) {
