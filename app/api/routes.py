@@ -260,19 +260,29 @@ async def get_agents(start: Optional[str] = Query(None), end: Optional[str] = Qu
             if name and name not in rna_counts:
                 rna_counts[name] = int(ag.get("ring_no_answer") or 0)
 
-        # ── Avg time between IB calls ─────────────────────────────────────
+        # ── Avg true gap between IB calls ─────────────────────────────────
+        # gap = next_call_start − prev_call_end (start + duration_sec)
+        # Excludes gaps ≤ 0 (data overlaps) and > 3600s (lunch / cross-day)
         between_rows = {
             r["agent_name"]: dict(r)
             for r in await db.fetch(
                 """
                 SELECT agent_name,
-                       COUNT(*) AS cnt,
-                       MIN(started_at) AS first_call_ts,
-                       MAX(started_at) AS last_call_ts
-                FROM calls
-                WHERE started_at BETWEEN $1 AND $2 AND answered = 1 AND direction = 'inbound'
+                       ROUND(AVG(gap_sec)) AS avg_between_sec
+                FROM (
+                    SELECT agent_name,
+                           EXTRACT(EPOCH FROM (
+                               started_at::timestamp -
+                               LAG(started_at::timestamp
+                                   + (duration_sec || ' seconds')::interval)
+                               OVER (PARTITION BY agent_name ORDER BY started_at)
+                           )) AS gap_sec
+                    FROM calls
+                    WHERE started_at BETWEEN $1 AND $2
+                      AND answered = 1 AND direction = 'inbound'
+                ) gaps
+                WHERE gap_sec > 0 AND gap_sec <= 3600
                 GROUP BY agent_name
-                HAVING COUNT(*) > 1
                 """,
                 start_dt, end_dt,
             )
@@ -317,16 +327,8 @@ async def get_agents(start: Optional[str] = Query(None), end: Optional[str] = Qu
 
         calls_per_hour = round(total / active_hours, 1) if active_hours else 0
 
-        brow = between_rows.get(br_name)
-        avg_between_sec = None
-        if brow and brow["cnt"] > 1:
-            try:
-                dt_fmt = "%Y-%m-%d %H:%M:%S"
-                span = (datetime.strptime(brow["last_call_ts"], dt_fmt) -
-                        datetime.strptime(brow["first_call_ts"], dt_fmt)).total_seconds()
-                avg_between_sec = round(span / (brow["cnt"] - 1))
-            except Exception:
-                avg_between_sec = None
+        raw_gap = between_rows.get(br_name, {}).get("avg_between_sec")
+        avg_between_sec = int(raw_gap) if raw_gap is not None else None
 
         agents_out.append({
             "agent_name":             br_name,
