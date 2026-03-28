@@ -512,7 +512,7 @@ async def get_agent_detail(
 
         # Daily stats
         daily_stats_row = await db.fetchrow(
-            """SELECT log_time, pause_time, wrapup_time, idle_time,
+            """SELECT log_time, pause_time, wrapup_time, idle_time, talk_time,
                       inbound_calls, outbound_calls, synced_at
                FROM agent_daily_stats
                WHERE agent_name = $1 AND date = $2""",
@@ -594,6 +594,9 @@ async def get_team(start: Optional[str] = Query(None), end: Optional[str] = Quer
         ))
 
     total       = s["total_calls"] or 0
+    c2          = s["calls_2min"]  or 0
+    c5          = s["calls_5min"]  or 0
+    c10         = s["calls_10min"] or 0
     c20         = s["calls_20min"] or 0
     total_deals = ds["total_deals"] or 0
 
@@ -602,9 +605,13 @@ async def get_team(start: Optional[str] = Query(None), end: Optional[str] = Quer
         "avg_talk_sec":      s["avg_talk_sec"] or 0,
         "max_talk_sec":      s["max_talk_sec"] or 0,
         "total_talk_sec":    s["total_talk_sec"] or 0,
-        "pct_2min":          _pct(s["calls_2min"]  or 0, total),
-        "pct_5min":          _pct(s["calls_5min"]  or 0, total),
-        "pct_10min":         _pct(s["calls_10min"] or 0, total),
+        "calls_2min":        c2,
+        "calls_5min":        c5,
+        "calls_10min":       c10,
+        "calls_20min":       c20,
+        "pct_2min":          _pct(c2,  total),
+        "pct_5min":          _pct(c5,  total),
+        "pct_10min":         _pct(c10, total),
         "pct_20min":         _pct(c20, total),
         "close_pct_20min":   _pct(total_deals, c20),
         "total_deals":       total_deals,
@@ -688,29 +695,57 @@ async def download_recording(call_id: str):
 
     headers = {"Authorization": f"Bearer {BLUEROCK_API_KEY}"}
 
-    async def _stream(url: str, filename: str):
-        async with httpx.AsyncClient() as client:
-            try:
-                resp = await client.get(url, headers=headers, timeout=30, follow_redirects=True)
-                resp.raise_for_status()
-            except httpx.HTTPStatusError as exc:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"BlueRock returned {exc.response.status_code} for recording"
-                )
-            except Exception as exc:
-                raise HTTPException(status_code=502, detail=f"Could not reach BlueRock: {exc}")
-            content_type = resp.headers.get("content-type", "audio/mpeg")
+    def _is_audio(content_type: str) -> bool:
+        ct = content_type.lower()
+        return any(x in ct for x in ("audio", "octet-stream", "mpeg", "mp3", "wav", "ogg"))
+
+    async def _fetch_audio(url: str, filename: str, client: httpx.AsyncClient):
+        """
+        Fetch url; return a StreamingResponse if audio, or None if it looks like
+        a JSON error body. Raises HTTPException on network/HTTP errors.
+        """
+        try:
+            resp = await client.get(url, headers=headers, timeout=30, follow_redirects=True)
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Could not reach BlueRock: {exc}")
+
+        if resp.status_code != 200:
+            return None, f"HTTP {resp.status_code} from {url}"
+
+        ct = resp.headers.get("content-type", "")
+        body = resp.content  # read fully so we can inspect
+
+        # If content-type is audio or body is large binary, stream it
+        if _is_audio(ct) or (len(body) > 1024 and not ct.startswith("application/json")):
             return StreamingResponse(
-                resp.aiter_bytes(),
-                media_type=content_type,
+                iter([body]),
+                media_type="audio/mpeg",
                 headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-            )
+            ), None
+
+        # JSON body — BlueRock returned an error or a redirect object
+        try:
+            data = json.loads(body)
+            # Sometimes BlueRock returns {"url": "..."} or {"file": "..."}
+            audio_url = (data.get("url") or data.get("file_url") or data.get("recording")
+                         or data.get("recording_url") or data.get("file"))
+            if audio_url and str(audio_url).startswith("http"):
+                # Follow the URL to the actual audio
+                return await _fetch_audio(audio_url, filename, client)
+            error_hint = str(data)
+        except Exception:
+            error_hint = body.decode("utf-8", errors="replace")[:200]
+
+        return None, f"BlueRock returned non-audio response from {url}: {error_hint}"
 
     recording_url = (raw.get("recording") or raw.get("recording_url") or raw.get("recordingfile")
                      or raw.get("record_file") or raw.get("file_url"))
     if recording_url and recording_url.startswith("http"):
-        return await _stream(recording_url, f"recording_{call_id[:8]}.mp3")
+        async with httpx.AsyncClient() as client:
+            result, err = await _fetch_audio(recording_url, f"recording_{call_id[:8]}.mp3", client)
+        if result:
+            return result
+        raise HTTPException(status_code=404, detail=err)
 
     uniqueid = (raw.get("unique") or raw.get("uniqueid") or raw.get("callid")
                 or raw.get("id") or raw.get("uid") or raw.get("call_id") or raw.get("linkedid"))
@@ -733,18 +768,10 @@ async def download_recording(call_id: str):
     last_error = ""
     async with httpx.AsyncClient() as client:
         for url in candidates:
-            try:
-                resp = await client.get(url, headers=headers, timeout=30, follow_redirects=True)
-                if resp.status_code == 200:
-                    content_type = resp.headers.get("content-type", "audio/mpeg")
-                    return StreamingResponse(
-                        resp.aiter_bytes(),
-                        media_type=content_type,
-                        headers={"Content-Disposition": f'attachment; filename="recording_{uniqueid}.mp3"'},
-                    )
-                last_error = f"{resp.status_code} from {url}"
-            except Exception as exc:
-                last_error = str(exc)
+            result, err = await _fetch_audio(url, f"recording_{uniqueid}.mp3", client)
+            if result:
+                return result
+            last_error = err or last_error
 
     raise HTTPException(
         status_code=404,

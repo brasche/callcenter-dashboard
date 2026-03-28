@@ -52,6 +52,7 @@ def _split_sql(sql: str) -> list[str]:
 # ── Idempotent migrations (safe to run on every startup) ────────────────────
 # In Postgres, ALTER TABLE ADD COLUMN IF NOT EXISTS won't error if column exists.
 _MIGRATIONS = [
+    "ALTER TABLE agent_daily_stats ADD COLUMN IF NOT EXISTS talk_time INTEGER DEFAULT 0",
     "ALTER TABLE agents ADD COLUMN IF NOT EXISTS bluerock_username TEXT",
     "ALTER TABLE agents ADD COLUMN IF NOT EXISTS active INTEGER DEFAULT 1",
     "ALTER TABLE deals  ADD COLUMN IF NOT EXISTS first_payment_amount REAL",

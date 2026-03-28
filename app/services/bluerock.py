@@ -459,13 +459,14 @@ async def sync_agent_daily_stats() -> None:
                 await db.execute(
                     """INSERT INTO agent_daily_stats
                        (agent_name, date, log_time, pause_time, wrapup_time,
-                        idle_time, inbound_calls, outbound_calls)
-                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                        idle_time, talk_time, inbound_calls, outbound_calls)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                        ON CONFLICT(agent_name, date) DO UPDATE SET
                          log_time       = EXCLUDED.log_time,
                          pause_time     = EXCLUDED.pause_time,
                          wrapup_time    = EXCLUDED.wrapup_time,
                          idle_time      = EXCLUDED.idle_time,
+                         talk_time      = EXCLUDED.talk_time,
                          inbound_calls  = EXCLUDED.inbound_calls,
                          outbound_calls = EXCLUDED.outbound_calls,
                          synced_at      = NOW()::TEXT""",
@@ -474,6 +475,7 @@ async def sync_agent_daily_stats() -> None:
                     int(ag.get("pause_time")     or 0),
                     int(ag.get("wrapup_time")    or 0),
                     int(ag.get("idle_time")      or 0),
+                    int(ag.get("talk_time")      or 0),
                     int(ag.get("inbound_calls")  or 0),
                     int(ag.get("outbound_calls") or 0),
                 )

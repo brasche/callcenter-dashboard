@@ -61,6 +61,7 @@ nav a.active { color: var(--text); background: var(--surface2); font-weight: 600
 .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
 .kpi-label { color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
 .kpi-val { font-size: 24px; font-weight: 800; line-height: 1; }
+.kpi-count { font-size: 12px; font-weight: 600; color: var(--text); opacity: 0.6; margin-top: 5px; }
 
 /* Card */
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
@@ -167,11 +168,11 @@ tr.team-row td { font-weight: 700; border-top: 2px solid var(--border); backgrou
   <div class="kpi-row">
     <div class="kpi"><div class="kpi-label">Total Calls</div><div class="kpi-val" id="kTotalCalls">—</div></div>
     <div class="kpi"><div class="kpi-label">Avg Talk</div><div class="kpi-val" id="kAvgTalk">—</div></div>
-    <div class="kpi"><div class="kpi-label">&gt;2 min %</div><div class="kpi-val" id="kPct2">—</div></div>
-    <div class="kpi"><div class="kpi-label">&gt;5 min %</div><div class="kpi-val" id="kPct5">—</div></div>
-    <div class="kpi"><div class="kpi-label">&gt;10 min %</div><div class="kpi-val" id="kPct10">—</div></div>
-    <div class="kpi"><div class="kpi-label">&gt;20 min %</div><div class="kpi-val" id="kPct20">—</div></div>
-    <div class="kpi"><div class="kpi-label">20min Close %</div><div class="kpi-val" id="kClose">—</div></div>
+    <div class="kpi"><div class="kpi-label">&gt;2 min %</div><div class="kpi-val" id="kPct2">—</div><div class="kpi-count" id="kPct2n"></div></div>
+    <div class="kpi"><div class="kpi-label">&gt;5 min %</div><div class="kpi-val" id="kPct5">—</div><div class="kpi-count" id="kPct5n"></div></div>
+    <div class="kpi"><div class="kpi-label">&gt;10 min %</div><div class="kpi-val" id="kPct10">—</div><div class="kpi-count" id="kPct10n"></div></div>
+    <div class="kpi"><div class="kpi-label">&gt;20 min %</div><div class="kpi-val" id="kPct20">—</div><div class="kpi-count" id="kPct20n"></div></div>
+    <div class="kpi"><div class="kpi-label">20min Close %</div><div class="kpi-val" id="kClose">—</div><div class="kpi-count" id="kClosen"></div></div>
     <div class="kpi"><div class="kpi-label">Deals Today</div><div class="kpi-val" id="kDeals">—</div></div>
     <div class="kpi"><div class="kpi-label">Avg Debt</div><div class="kpi-val" id="kAvgDebt">—</div></div>
     <div class="kpi"><div class="kpi-label">Avg 1st Pay</div><div class="kpi-val" id="kAvgPay">—</div></div>
@@ -305,13 +306,20 @@ async function fetchAll() {
 // ── KPIs ───────────────────────────────────────────────────────────────────
 function renderKPIs() {
   const t = teamStats;
-  set('kTotalCalls', t.total_calls ?? '—');
+  const tot = t.total_calls || 0;
+  // Resolve counts: use API field if present, otherwise derive from pct × total
+  const c2  = t.calls_2min  ?? Math.round((t.pct_2min  || 0) / 100 * tot);
+  const c5  = t.calls_5min  ?? Math.round((t.pct_5min  || 0) / 100 * tot);
+  const c10 = t.calls_10min ?? Math.round((t.pct_10min || 0) / 100 * tot);
+  const c20 = t.calls_20min ?? Math.round((t.pct_20min || 0) / 100 * tot);
+  set('kTotalCalls', tot || '—');
   set('kAvgTalk',    fmtDur(t.avg_talk_sec));
-  set('kPct2',       pct(t.pct_2min));
-  set('kPct5',       pct(t.pct_5min));
-  set('kPct10',      pct(t.pct_10min));
-  set('kPct20',      pct(t.pct_20min));
-  set('kClose',      pct(t.close_pct_20min));
+  set('kPct2',   c2);   set('kPct2n',   t.pct_2min  != null ? t.pct_2min  + '% of calls' : '');
+  set('kPct5',   c5);   set('kPct5n',   t.pct_5min  != null ? t.pct_5min  + '% of calls' : '');
+  set('kPct10',  c10);  set('kPct10n',  t.pct_10min != null ? t.pct_10min + '% of calls' : '');
+  set('kPct20',  c20);  set('kPct20n',  t.pct_20min != null ? t.pct_20min + '% of calls' : '');
+  set('kClose',  t.total_deals ?? 0);
+  set('kClosen', t.close_pct_20min != null ? t.close_pct_20min + '% of 20m+ calls' : '');
   set('kDeals',      t.total_deals ?? '—');
   set('kAvgDebt',    dollar(t.avg_debt_enrolled));
   set('kAvgPay',     dollar(t.avg_first_payment));
@@ -734,7 +742,7 @@ function buildModal(d, ag) {
     const pauseT = ds.pause_time  || blockTotals.paused    || 0;
     const wrapT  = ds.wrapup_time || blockTotals.wrapup    || 0;
     const idleT  = ds.idle_time   || 0;
-    const talkT  = blockTotals.in_call || 0;
+    const talkT  = ds.talk_time || blockTotals.in_call || 0;
     // Active = everything except pause (log_time - pause_time)
     const activeT = logT > 0 ? Math.max(logT - pauseT, 0) : 0;
 
