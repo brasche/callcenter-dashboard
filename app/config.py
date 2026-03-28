@@ -3,11 +3,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# BlueRock
+# BlueRock REST API (used by the sync service)
 BLUEROCK_API_KEY = os.getenv("BLUEROCK_API_KEY", "")
 BLUEROCK_API_URL = os.getenv("BLUEROCK_API_URL", "https://api.1bluerock.com/v2")
 # Optional: comma-separated list of queues to track; if empty, auto-discovers via /queues/list
 BLUEROCK_QUEUES = os.getenv("BLUEROCK_QUEUES", "")
+
+# BlueRock Web Portal (used for call recording access — separate from the REST API)
+BLUEROCK_ACCOUNT  = os.getenv("BLUEROCK_ACCOUNT", "")
+BLUEROCK_USERNAME = os.getenv("BLUEROCK_USERNAME", "")
+BLUEROCK_PASSWORD = os.getenv("BLUEROCK_PASSWORD", "")
 
 # Google Sheets
 # On Railway: set GOOGLE_SHEETS_CREDENTIALS_JSON to the full contents of credentials.json

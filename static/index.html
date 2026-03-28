@@ -105,6 +105,13 @@ tbody td.right { text-align: right; }
 
 tr.team-row td { font-weight: 700; border-top: 2px solid var(--border); background: var(--surface2); }
 
+/* Recording play button */
+.rec-btn {
+  background: none; border: 1px solid var(--border); border-radius: 3px;
+  color: var(--muted); padding: 1px 6px; font-size: 10px; cursor: pointer; line-height: 1.6;
+}
+.rec-btn:hover { color: var(--accent); border-color: var(--accent); }
+
 /* Count+pct cell */
 .cp-cell { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
 .cp-label { font-size: 12px; white-space: nowrap; }
@@ -843,14 +850,17 @@ function buildModal(d, ag) {
         ? '<span class="pill pill-muted" style="font-size:10px">OB</span>'
         : '<span class="pill pill-green" style="font-size:10px">IB</span>';
       const durCls = dur>=1200?'pill-purple':dur>=600?'pill-red':dur>=300?'pill-orange':dur>=120?'pill-yellow':'pill-muted';
-      rows += `<tr style="${inBiz?'':'opacity:.5'}">
+      const playBtn = c.answered && dur > 0
+        ? `<button class="rec-btn" data-call-id="${esc(c.id)}" data-phone="${esc(c.phone_number||'')}" data-date="${esc(c.started_at||'')}" title="Play recording">▶</button>`
+        : '';
+      rows += `<tr id="call-row-${esc(c.id)}" style="${inBiz?'':'opacity:.5'}">
         <td class="fmono" style="font-size:11px;color:var(--muted)">${tlLabel(c.started_at)}</td>
         <td>${dir}</td>
         <td>${esc(c.queue||'—')}</td>
         <td class="fmono dim" style="font-size:11px">${esc(c.phone_number||'—')}</td>
         <td class="right"><span class="pill ${durCls}">${fmtDur(dur)}</span></td>
         <td class="dim" style="font-size:11px">${esc(c.exit_reason||'—')}</td>
-        <td></td>
+        <td>${playBtn}</td>
       </tr>`;
       prevEndMs = endMs;
     });
@@ -881,34 +891,50 @@ function buildModal(d, ag) {
   return html;
 }
 
-async function dlRec(callId) {
-  // BlueRock API does not expose a recording download endpoint.
-  alert('Recording downloads are not available via the BlueRock API. Please access recordings directly in the BlueRock portal.');
-  return;
+async function playRecording(callId, phone, calldate) {
+  const callRow = document.getElementById(`call-row-${callId}`);
+  if (!callRow) return;
+
+  // Toggle: remove player row if already open
+  const existingRow = document.getElementById(`audio-row-${callId}`);
+  if (existingRow) { existingRow.remove(); return; }
+
+  // Insert a loading row immediately after the call row
+  const playerRow = document.createElement('tr');
+  playerRow.id = `audio-row-${callId}`;
+  playerRow.innerHTML = `<td colspan="7" style="padding:8px 16px;background:rgba(79,142,247,.05)">
+    <span id="audio-status-${callId}" style="color:var(--muted);font-size:12px">⏳ Loading recording…</span>
+  </td>`;
+  callRow.after(playerRow);
+
   try {
-    const res = await fetch(`/api/recordings/${callId}`);
+    const url = `/api/recording/${encodeURIComponent(phone)}/${encodeURIComponent(calldate)}`;
+    const res = await fetch(url);
+    const statusEl = document.getElementById(`audio-status-${callId}`);
+    if (!statusEl) return;
+
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      alert('Recording not available:\n' + (err.detail || `HTTP ${res.status}`));
+      statusEl.textContent = '✗ ' + (err.detail || `Recording not available (HTTP ${res.status})`);
+      statusEl.style.color = 'var(--red)';
       return;
     }
-    const blob = await res.blob();
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href     = url;
-    a.download = `recording_${callId.slice(0,8)}.mp3`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const data = await res.json();
+    statusEl.parentElement.innerHTML =
+      `<audio controls style="width:100%;max-width:520px;height:36px" src="/api/recording/stream/${encodeURIComponent(data.recording_id)}"></audio>`;
   } catch(e) {
-    alert('Failed to download recording: ' + e.message);
+    const statusEl = document.getElementById(`audio-status-${callId}`);
+    if (statusEl) { statusEl.textContent = '✗ Error: ' + e.message; statusEl.style.color = 'var(--red)'; }
   }
 }
 
 function closeModal(e) { if (e.target === document.getElementById('modalBg')) closeModalDirect(); }
 function closeModalDirect() { document.getElementById('modalBg').classList.remove('open'); }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModalDirect(); });
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.rec-btn');
+  if (btn) playRecording(btn.dataset.callId, btn.dataset.phone, btn.dataset.date);
+});
 
 // ── Sync indicator ─────────────────────────────────────────────────────────
 function updateSyncTime(ok) {

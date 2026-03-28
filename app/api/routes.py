@@ -13,9 +13,11 @@ import json
 from datetime import date, datetime, timezone
 from typing import Optional
 
+import os
+
 import httpx
-from fastapi import APIRouter, Query
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse, StreamingResponse
 from app.config import BLUEROCK_API_KEY, BLUEROCK_API_URL
 from app.models.database import get_db
 from app.services.bluerock import (
@@ -677,12 +679,60 @@ async def get_rna(start: Optional[str] = Query(None), end: Optional[str] = Query
 
 
 # ---------------------------------------------------------------------------
+# /api/recording/stream/{recording_id}  — serve a cached MP3 for inline playback
+# /api/recording/{callerid}/{call_datetime} — find + download, return recording_id
+# ---------------------------------------------------------------------------
+
+@router.get("/recording/stream/{recording_id}")
+async def stream_recording(recording_id: str):
+    """Serve a previously downloaded recording as an MP3 (supports range requests)."""
+    # Sanitize to prevent path traversal
+    safe_id = recording_id.replace("..", "").replace("/", "").replace("\\", "")
+    path = os.path.join("recordings", f"recording_{safe_id}.mp3")
+    if not os.path.exists(path):
+        raise HTTPException(
+            status_code=404,
+            detail="Recording not cached. Fetch it first via /api/recording/{callerid}/{call_datetime}",
+        )
+    return FileResponse(path, media_type="audio/mpeg", filename=f"recording_{safe_id}.mp3")
+
+
+@router.get("/recording/{callerid}/{call_datetime:path}")
+async def find_and_cache_recording(callerid: str, call_datetime: str):
+    """
+    Find a recording on the BlueRock portal by phone number and call datetime,
+    download it to the local cache, and return the recording_id for streaming.
+    """
+    from app.services.bluerock_recording_service import (
+        async_find_recording_id,
+        async_download_recording,
+    )
+
+    try:
+        recording_id = await async_find_recording_id(callerid, call_datetime)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"BlueRock portal error: {exc}")
+
+    if not recording_id:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No recording found for {callerid} at {call_datetime}",
+        )
+
+    try:
+        await async_download_recording(recording_id)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Failed to download recording: {exc}")
+
+    return {"recording_id": recording_id, "stream_url": f"/api/recording/stream/{recording_id}"}
+
+
+# ---------------------------------------------------------------------------
 # /api/recordings/{call_id}
 # ---------------------------------------------------------------------------
 
 @router.get("/recordings/{call_id}")
 async def download_recording(call_id: str):
-    from fastapi import HTTPException
 
     async with get_db() as db:
         row = await db.fetchrow(
@@ -794,8 +844,6 @@ async def download_recording(call_id: str):
 
 @router.get("/debug/recording/{call_id}")
 async def debug_recording(call_id: str):
-    from fastapi import HTTPException
-
     async with get_db() as db:
         row = await db.fetchrow(
             "SELECT raw_json, queue, agent_name, started_at FROM calls WHERE id = $1",

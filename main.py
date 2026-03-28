@@ -12,6 +12,15 @@ from app.models.database import init_db
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    # Login to BlueRock recording portal (non-fatal if credentials are not configured)
+    try:
+        from app.config import BLUEROCK_ACCOUNT
+        if BLUEROCK_ACCOUNT:
+            from app.services.bluerock_recording_service import async_login
+            await async_login()
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("BlueRock portal login skipped: %s", exc)
     start_scheduler()
     yield
     stop_scheduler()
