@@ -870,8 +870,16 @@ function buildModal(d, ag) {
     const tlTitle = tlCalls.length
       ? `Call Records: ${tlCalls.length} calls (business hrs 7 AM - 4 PM)`
       : `Call Records: none today`;
-    html += `<div><div class="modal-section-title">${tlTitle}</div>
-      <table style="width:100%"><thead><tr>
+    const callTableId = 'call-records-table';
+    html += `<div>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+        <div class="modal-section-title" style="margin-bottom:0">${tlTitle}</div>
+        ${tlCalls.length ? `<input id="call-search" type="search" placeholder="Filter by phone, queue, time, exit…"
+          style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);
+                 padding:5px 10px;font-size:12px;width:260px;outline:none"
+          oninput="filterCallTable(this.value)">` : ''}
+      </div>
+      <table id="${callTableId}" style="width:100%"><thead><tr>
         <th>Time</th><th>Type</th><th>Queue</th><th>Client ID</th><th class="right">Duration</th><th>Exit</th><th></th>
       </tr></thead><tbody>${rows}</tbody></table></div>`;
   }
@@ -928,8 +936,23 @@ async function playRecording(callId, phone, calldate) {
   }
 }
 
+function filterCallTable(q) {
+  const tbl = document.getElementById('call-records-table');
+  if (!tbl) return;
+  const term = q.trim().toLowerCase();
+  Array.from(tbl.tBodies[0].rows).forEach(row => {
+    if (row.cells.length < 4) return; // gap / header annotation rows
+    const text = Array.from(row.cells).map(c => c.textContent).join(' ').toLowerCase();
+    row.style.display = (!term || text.includes(term)) ? '' : 'none';
+  });
+}
+
 function closeModal(e) { if (e.target === document.getElementById('modalBg')) closeModalDirect(); }
-function closeModalDirect() { document.getElementById('modalBg').classList.remove('open'); }
+function closeModalDirect() {
+  document.getElementById('modalBg').classList.remove('open');
+  const s = document.getElementById('call-search');
+  if (s) s.value = '';
+}
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModalDirect(); });
 document.addEventListener('click', e => {
   const btn = e.target.closest('.rec-btn');
