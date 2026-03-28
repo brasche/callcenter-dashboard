@@ -10,7 +10,7 @@ Endpoints:
 """
 
 import json
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 import os
@@ -380,6 +380,106 @@ async def get_agents(start: Optional[str] = Query(None), end: Optional[str] = Qu
         ag["cps"] = round(ag["total_calls"] / deals, 1) if deals else None
 
     return {"agents": agents_out, "as_of": datetime.now(timezone.utc).isoformat()}
+
+
+# ---------------------------------------------------------------------------
+# /api/agents/{agent_name}/trends  — day-by-day KPI breakdown
+# ---------------------------------------------------------------------------
+
+@router.get("/agents/{agent_name}/trends")
+async def get_agent_trends(
+    agent_name: str,
+    start: Optional[str] = Query(None),
+    end:   Optional[str] = Query(None),
+):
+    start_dt, end_dt, start_date, end_date = _date_range(start, end)
+
+    async with get_db() as db:
+        call_days = await db.fetch(
+            """
+            SELECT
+                SUBSTRING(started_at, 1, 10) AS day,
+                COUNT(*) FILTER (WHERE answered=1 AND direction='inbound')  AS ib_calls,
+                COUNT(*) FILTER (WHERE answered=1 AND direction='outbound') AS ob_calls,
+                COALESCE(SUM(duration_sec)  FILTER (WHERE answered=1), 0)  AS total_talk_sec,
+                COALESCE(CAST(AVG(duration_sec) FILTER (WHERE answered=1) AS INTEGER), 0) AS avg_talk_sec,
+                COUNT(*) FILTER (WHERE answered=1 AND duration_sec >= 120)  AS calls_2min,
+                COUNT(*) FILTER (WHERE answered=1 AND duration_sec >= 300)  AS calls_5min,
+                COUNT(*) FILTER (WHERE answered=1 AND duration_sec >= 600)  AS calls_10min,
+                COUNT(*) FILTER (WHERE answered=1 AND duration_sec >= 1200) AS calls_20min
+            FROM calls
+            WHERE agent_name = $1 AND started_at BETWEEN $2 AND $3
+            GROUP BY day ORDER BY day
+            """,
+            agent_name, start_dt, end_dt,
+        )
+
+        deal_days = await db.fetch(
+            """
+            SELECT SUBSTRING(d.submitted_at, 1, 10) AS day, COUNT(*) AS deals
+            FROM deals d
+            INNER JOIN agents a ON (
+                LOWER(d.agent_name) = LOWER(a.short_name)
+                OR (a.full_name IS NOT NULL AND LOWER(d.agent_name) = LOWER(a.full_name))
+            )
+            WHERE LOWER(a.bluerock_username) = LOWER($1)
+              AND SUBSTRING(d.submitted_at, 1, 10) BETWEEN $2 AND $3
+            GROUP BY day ORDER BY day
+            """,
+            agent_name, start_date, end_date,
+        )
+
+        stat_days = await db.fetch(
+            """
+            SELECT date AS day, log_time, pause_time, talk_time, inbound_calls, outbound_calls
+            FROM agent_daily_stats
+            WHERE agent_name = $1 AND date BETWEEN $2 AND $3
+            ORDER BY date
+            """,
+            agent_name, start_date, end_date,
+        )
+
+    call_by_day = {r["day"]: _row_to_dict(r) for r in call_days}
+    deal_by_day = {r["day"]: int(r["deals"]) for r in deal_days}
+    stat_by_day = {r["day"]: _row_to_dict(r) for r in stat_days}
+
+    start_d = date.fromisoformat(start_date)
+    end_d   = date.fromisoformat(end_date)
+    days = []
+    cur = start_d
+    while cur <= end_d:
+        day_str = cur.isoformat()
+        c = call_by_day.get(day_str, {})
+        s = stat_by_day.get(day_str, {})
+        deals    = deal_by_day.get(day_str, 0)
+        ib       = int(c.get("ib_calls", 0) or 0)
+        ob       = int(c.get("ob_calls", 0) or 0)
+        talk_sec = int(c.get("total_talk_sec", 0) or 0)
+        avg_talk = int(c.get("avg_talk_sec", 0) or 0)
+        c5       = int(c.get("calls_5min", 0) or 0)
+        log_t    = int(s.get("log_time", 0) or 0)
+        pause_t  = int(s.get("pause_time", 0) or 0)
+        # prefer daily_stats talk_time; fall back to sum of call durations
+        tt       = int(s.get("talk_time", 0) or 0) or talk_sec
+        active_t = max(log_t - pause_t, 0)
+        days.append({
+            "day":            day_str,
+            "ib_calls":       ib,
+            "ob_calls":       ob,
+            "total_talk_sec": tt,
+            "avg_talk_sec":   avg_talk,
+            "calls_5min":     c5,
+            "calls_10min":    int(c.get("calls_10min", 0) or 0),
+            "calls_20min":    int(c.get("calls_20min", 0) or 0),
+            "pct_5min":       _pct(c5, ib),
+            "deals":          deals,
+            "cps":            round(ib / deals, 1) if deals else None,
+            "active_time_sec": active_t,
+            "log_time_sec":   log_t,
+        })
+        cur += timedelta(days=1)
+
+    return {"days": days, "agent_name": agent_name}
 
 
 # ---------------------------------------------------------------------------

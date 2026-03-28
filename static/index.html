@@ -145,6 +145,32 @@ tr.team-row td { font-weight: 700; border-top: 2px solid var(--border); backgrou
 
 .fmono { font-family: 'Consolas', monospace; }
 .dim   { color: var(--muted); }
+
+/* Agent modal tabs */
+.modal-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); padding: 0 20px; background: var(--surface); }
+.modal-tab {
+  background: none; border: none; border-bottom: 2px solid transparent;
+  color: var(--muted); padding: 10px 18px; font-size: 13px; font-weight: 600;
+  cursor: pointer; margin-bottom: -1px; transition: color .15s;
+}
+.modal-tab:hover { color: var(--text); }
+.modal-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* Trends */
+.trends-periods { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 18px; }
+.period-btn {
+  background: var(--surface2); border: 1px solid var(--border); border-radius: 6px;
+  color: var(--muted); padding: 5px 13px; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.period-btn:hover { color: var(--text); }
+.period-btn.active { background: rgba(79,110,247,.15); border-color: var(--accent); color: var(--accent); }
+.trends-custom { display: flex; align-items: center; gap: 6px; margin-left: 6px; }
+.trends-custom input[type=date] {
+  background: var(--surface2); border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text); padding: 4px 8px; font-size: 12px; color-scheme: dark;
+}
+.chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; }
+.chart-card { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
 </style>
 </head>
 <body>
@@ -239,7 +265,28 @@ tr.team-row td { font-weight: 700; border-top: 2px solid var(--border); backgrou
       <h2 id="modalTitle">Agent Detail</h2>
       <button class="modal-close" onclick="closeModalDirect()">✕</button>
     </div>
-    <div class="modal-body" id="modalBody">Loading…</div>
+    <div class="modal-tabs">
+      <button class="modal-tab active" id="tab-btn-summary" onclick="showAgentTab('summary')">Summary</button>
+      <button class="modal-tab" id="tab-btn-trends" onclick="showAgentTab('trends')">Trends</button>
+    </div>
+    <div id="tab-summary">
+      <div class="modal-body" id="modalBody">Loading…</div>
+    </div>
+    <div id="tab-trends" style="display:none;padding:20px">
+      <div class="trends-periods">
+        <button class="period-btn" data-period="7d"  onclick="setTrendsPeriod(this)">Past 7 Days</button>
+        <button class="period-btn" data-period="30d" onclick="setTrendsPeriod(this)">Past 30 Days</button>
+        <button class="period-btn" data-period="wtd" onclick="setTrendsPeriod(this)">WTD</button>
+        <button class="period-btn" data-period="mtd" onclick="setTrendsPeriod(this)">MTD</button>
+        <div class="trends-custom">
+          <input type="date" id="trends-start">
+          <span style="color:var(--muted)">–</span>
+          <input type="date" id="trends-end">
+          <button class="period-btn" onclick="setTrendsPeriod(null,'custom')">Apply</button>
+        </div>
+      </div>
+      <div id="trends-charts"><div style="color:var(--muted);font-size:12px">Select a period above.</div></div>
+    </div>
   </div>
 </div>
 
@@ -558,6 +605,12 @@ function statusPill(s) {
 
 // ── Modal ──────────────────────────────────────────────────────────────────
 async function openModal(agentName) {
+  _modalAgentName = agentName;
+  // Reset to Summary tab and clear trends
+  showAgentTab('summary');
+  document.getElementById('trends-charts').innerHTML = '<div style="color:var(--muted);font-size:12px">Select a period above.</div>';
+  document.querySelectorAll('.period-btn[data-period]').forEach(b => b.classList.remove('active'));
+
   const bg = document.getElementById('modalBg');
   const body = document.getElementById('modalBody');
   document.getElementById('modalTitle').textContent =
@@ -934,6 +987,198 @@ async function playRecording(callId, phone, calldate) {
     const statusEl = document.getElementById(`audio-status-${callId}`);
     if (statusEl) { statusEl.textContent = '✗ Error: ' + e.message; statusEl.style.color = 'var(--red)'; }
   }
+}
+
+// ── Agent modal tabs ───────────────────────────────────────────────────────
+let _modalAgentName = '';
+
+function showAgentTab(tab) {
+  document.getElementById('tab-summary').style.display = tab === 'summary' ? '' : 'none';
+  document.getElementById('tab-trends').style.display  = tab === 'trends'  ? '' : 'none';
+  document.getElementById('tab-btn-summary').classList.toggle('active', tab === 'summary');
+  document.getElementById('tab-btn-trends').classList.toggle('active',  tab === 'trends');
+  if (tab === 'trends' && _modalAgentName) {
+    // Default to Past 7 Days on first open
+    const alreadyLoaded = document.getElementById('trends-charts').querySelector('.chart-card');
+    if (!alreadyLoaded) setTrendsPeriod(document.querySelector('.period-btn[data-period="7d"]'));
+  }
+}
+
+// ── Period helpers ─────────────────────────────────────────────────────────
+function _isoDate(d) { return d.toISOString().slice(0, 10); }
+
+function _trendsDateRange(period) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (period === '7d')  return [_isoDate(new Date(today - 6 * 864e5)), _isoDate(today)];
+  if (period === '30d') return [_isoDate(new Date(today - 29 * 864e5)), _isoDate(today)];
+  if (period === 'wtd') {
+    const mon = new Date(today);
+    mon.setDate(today.getDate() - ((today.getDay() + 6) % 7)); // Monday
+    return [_isoDate(mon), _isoDate(today)];
+  }
+  if (period === 'mtd') return [_isoDate(new Date(today.getFullYear(), today.getMonth(), 1)), _isoDate(today)];
+  return null;
+}
+
+function setTrendsPeriod(btn, forceCustom) {
+  // Highlight active button
+  document.querySelectorAll('.period-btn[data-period]').forEach(b => b.classList.remove('active'));
+  if (btn && btn.dataset.period) btn.classList.add('active');
+
+  let start, end;
+  if (forceCustom === 'custom' || (!btn?.dataset?.period)) {
+    start = document.getElementById('trends-start').value;
+    end   = document.getElementById('trends-end').value;
+    if (!start || !end) return;
+  } else {
+    [start, end] = _trendsDateRange(btn.dataset.period);
+  }
+  loadTrends(start, end);
+}
+
+// ── Chart renderers ────────────────────────────────────────────────────────
+function _svgBar({ labels, values, color, title, fmt }) {
+  const W = 480, H = 180, pad = { l: 46, r: 8, t: 22, b: 30 };
+  const pw = W - pad.l - pad.r, ph = H - pad.t - pad.b;
+  const n = values.length;
+  const maxV = Math.max(...values, 1);
+  const f = fmt || (v => v);
+  const ticks = [0.25, 0.5, 0.75, 1];
+
+  const grid = ticks.map(t => {
+    const y = (pad.t + ph * (1 - t)).toFixed(1);
+    return `<line x1="${pad.l}" y1="${y}" x2="${W - pad.r}" y2="${y}" stroke="#2e3250" stroke-width="1"/>
+            <text x="${pad.l - 4}" y="${(+y + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="#7b82a0">${f(maxV * t)}</text>`;
+  }).join('');
+
+  const slotW = pw / n;
+  const barW  = Math.max(slotW * 0.55, 2);
+  const bars  = values.map((v, i) => {
+    const bh = ph * (v / maxV);
+    const x  = (pad.l + i * slotW + slotW * 0.225).toFixed(1);
+    const y  = (pad.t + ph - bh).toFixed(1);
+    return `<rect x="${x}" y="${y}" width="${barW.toFixed(1)}" height="${bh.toFixed(1)}" fill="${color}" rx="2" opacity=".85">
+              <title>${labels[i]}: ${f(v)}</title></rect>`;
+  }).join('');
+
+  const showEvery = Math.ceil(n / 8);
+  const xlbls = labels.map((l, i) => {
+    if (i % showEvery !== 0 && i !== n - 1) return '';
+    const x = (pad.l + i * slotW + slotW / 2).toFixed(1);
+    return `<text x="${x}" y="${H - 6}" text-anchor="middle" font-size="9" fill="#7b82a0">${l.slice(5)}</text>`;
+  }).join('');
+
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block">
+    <text x="${pad.l}" y="14" font-size="11" font-weight="700" fill="#e2e8f0">${title}</text>
+    ${grid}${bars}${xlbls}
+  </svg>`;
+}
+
+function _svgLine({ labels, values, color, title, fmt }) {
+  const W = 480, H = 180, pad = { l: 46, r: 8, t: 22, b: 30 };
+  const pw = W - pad.l - pad.r, ph = H - pad.t - pad.b;
+  const n = values.length;
+  const maxV = Math.max(...values, 1);
+  const f = fmt || (v => v);
+  const ticks = [0.25, 0.5, 0.75, 1];
+
+  const grid = ticks.map(t => {
+    const y = (pad.t + ph * (1 - t)).toFixed(1);
+    return `<line x1="${pad.l}" y1="${y}" x2="${W - pad.r}" y2="${y}" stroke="#2e3250" stroke-width="1"/>
+            <text x="${pad.l - 4}" y="${(+y + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="#7b82a0">${f(maxV * t)}</text>`;
+  }).join('');
+
+  const xOf = i => pad.l + (n < 2 ? pw / 2 : i * pw / (n - 1));
+  const yOf = v => pad.t + ph * (1 - v / maxV);
+  const pts = values.map((v, i) => `${xOf(i).toFixed(1)},${yOf(v).toFixed(1)}`);
+  const area = `${pad.l},${(pad.t + ph).toFixed(1)} ${pts.join(' ')} ${xOf(n-1).toFixed(1)},${(pad.t + ph).toFixed(1)}`;
+
+  const showEvery = Math.ceil(n / 8);
+  const xlbls = labels.map((l, i) => {
+    if (i % showEvery !== 0 && i !== n - 1) return '';
+    return `<text x="${xOf(i).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="9" fill="#7b82a0">${l.slice(5)}</text>`;
+  }).join('');
+
+  const dots = values.map((v, i) =>
+    `<circle cx="${xOf(i).toFixed(1)}" cy="${yOf(v).toFixed(1)}" r="${n > 20 ? 2 : 3}" fill="${color}">
+       <title>${labels[i]}: ${f(v)}</title></circle>`
+  ).join('');
+
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block">
+    <text x="${pad.l}" y="14" font-size="11" font-weight="700" fill="#e2e8f0">${title}</text>
+    ${grid}
+    <polygon points="${area}" fill="${color}" opacity=".08"/>
+    <polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="2"/>
+    ${dots}${xlbls}
+  </svg>`;
+}
+
+// ── Trends loader ──────────────────────────────────────────────────────────
+async function loadTrends(start, end) {
+  const container = document.getElementById('trends-charts');
+  container.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:12px 0">Loading…</div>';
+
+  // Pre-fill custom inputs with current range
+  document.getElementById('trends-start').value = start;
+  document.getElementById('trends-end').value   = end;
+
+  let data;
+  try {
+    const r = await fetch(`/api/agents/${encodeURIComponent(_modalAgentName)}/trends?start=${start}&end=${end}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    data = await r.json();
+  } catch (e) {
+    container.innerHTML = `<div style="color:var(--red);font-size:12px">Failed to load trends: ${e.message}</div>`;
+    return;
+  }
+
+  const days = data.days || [];
+  if (!days.length) {
+    container.innerHTML = '<div style="color:var(--muted);font-size:12px">No data for this period.</div>';
+    return;
+  }
+
+  const labels  = days.map(d => d.day);
+  const fmtMin  = s => `${Math.round(s / 60)}m`;
+  const fmtHr   = s => `${(s / 3600).toFixed(1)}h`;
+  const fmtPct  = v => `${v}%`;
+  const fmtNum  = v => String(Math.round(v));
+
+  const charts = [
+    _svgBar({
+      labels, title: 'Inbound Calls / Day',
+      values: days.map(d => d.ib_calls),
+      color: 'var(--accent)', fmt: fmtNum,
+    }),
+    _svgBar({
+      labels, title: 'Talk Time / Day',
+      values: days.map(d => d.total_talk_sec),
+      color: '#22c55e', fmt: fmtHr,
+    }),
+    _svgLine({
+      labels, title: 'Avg Call Duration / Day',
+      values: days.map(d => d.avg_talk_sec),
+      color: '#eab308', fmt: fmtMin,
+    }),
+    _svgBar({
+      labels, title: 'Deals / Day',
+      values: days.map(d => d.deals),
+      color: '#a855f7', fmt: fmtNum,
+    }),
+    _svgLine({
+      labels, title: '% Calls ≥ 5 Min / Day',
+      values: days.map(d => d.pct_5min),
+      color: '#f97316', fmt: fmtPct,
+    }),
+    _svgLine({
+      labels, title: 'Active Time / Day',
+      values: days.map(d => d.active_time_sec),
+      color: '#4f6ef7', fmt: fmtHr,
+    }),
+  ];
+
+  container.innerHTML = `<div class="chart-grid">${charts.map(c => `<div class="chart-card">${c}</div>`).join('')}</div>`;
 }
 
 function filterCallTable(q) {
